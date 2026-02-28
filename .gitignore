@@ -1,0 +1,20 @@
+# Secrets
+.env
+
+# Runtime application data
+config/
+media/
+
+# Local backups and temp files
+backup.resolv.conf
+*.log
+*.tmp
+*.swp
+
+# Editor/OS artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.gitsecret/keys/random_seed
+!*.secret
