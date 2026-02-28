@@ -1,6 +1,6 @@
 services:
   flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:latest
+    image: ghcr.io/flaresolverr/flaresolverr@sha256:7962759d99d7e125e108e0f5e7f3cdbcd36161776d058d1d9b7153b92ef1af9e # v3.4.6
     container_name: flaresolverr
     mem_limit: 512m
     restart: unless-stopped
@@ -15,7 +15,7 @@ services:
     networks:
       - media_net
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:latest
+    image: lscr.io/linuxserver/qbittorrent@sha256:a68c4cfb7b07c39cf3f13e7f1d23d333c1e4a60304d37bc1eec7af3eacfe12d5 # 5.1.4-r1-ls432
     container_name: qbittorrent
     mem_limit: 512m
     restart: unless-stopped
@@ -37,7 +37,7 @@ services:
     networks:
       - media_net
   radarr:
-    image: lscr.io/linuxserver/radarr:latest
+    image: lscr.io/linuxserver/radarr@sha256:6c0948b42c149e36bb3dbc0b64d36c77b2d3c9dccf1b424c4f72af1e57ba0c21 # 6.0.4.10291-ls289
     container_name: radarr
     mem_limit: 768m
     restart: unless-stopped
@@ -56,7 +56,7 @@ services:
     networks:
       - media_net
   sonarr:
-    image: lscr.io/linuxserver/sonarr:latest
+    image: lscr.io/linuxserver/sonarr@sha256:8b9f2138ec50fc9e521960868f79d2ad0d529bc610aef19031ea8ff80b54c5e0 # 4.0.16.2944-ls300
     container_name: sonarr
     mem_limit: 768m
     restart: unless-stopped
@@ -75,7 +75,7 @@ services:
     networks:
       - media_net
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:latest
+    image: lscr.io/linuxserver/prowlarr@sha256:67a8aaedcfd6989f3030b937a6a07007310b1dfc7ee8df16d2cbfa48d1c1158c # 2.3.0.5236-ls134
     container_name: prowlarr
     mem_limit: 512m
     restart: unless-stopped
@@ -93,7 +93,7 @@ services:
     networks:
       - media_net
   bazarr:
-    image: lscr.io/linuxserver/bazarr:latest
+    image: lscr.io/linuxserver/bazarr@sha256:648f694532a3a53d8cf78bc888919ef538659bad41af4c680b0427ad1047d171 # v1.5.3-ls328
     container_name: bazarr
     mem_limit: 512m
     restart: unless-stopped
@@ -112,7 +112,7 @@ services:
     networks:
       - media_net
   jellyfin:
-    image: lscr.io/linuxserver/jellyfin:latest
+    image: lscr.io/linuxserver/jellyfin@sha256:6e614901a5e9d04f03b2b84363fcc69285635d4149e23e4cac30b1c9a8ccddac # 10.11.5ubu2404-ls13
     container_name: jellyfin
     mem_limit: 2g
     restart: unless-stopped
@@ -133,7 +133,7 @@ services:
     networks:
       - media_net
   jellyseerr:
-    image: fallenbagel/jellyseerr:latest
+    image: fallenbagel/jellyseerr@sha256:4538137bc5af902dece165f2bf73776d9cf4eafb6dd714670724af8f3eb77764 # 2.7.3
     container_name: jellyseerr
     mem_limit: 512m
     restart: unless-stopped
