@@ -114,7 +114,7 @@ services:
   jellyfin:
     image: lscr.io/linuxserver/jellyfin@sha256:6e614901a5e9d04f03b2b84363fcc69285635d4149e23e4cac30b1c9a8ccddac # 10.11.5ubu2404-ls13
     container_name: jellyfin
-    mem_limit: 2g
+    mem_limit: 6g
     restart: unless-stopped
     dns:
       - 1.1.1.1
@@ -148,6 +148,71 @@ services:
       - ./config/jellyseerr:/app/config
     networks:
       - media_net
+
+  whisper-asr:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    container_name: whisper-asr
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+      - ASR_ENGINE=faster_whisper
+      - ASR_MODEL=${WHISPER_MODEL:-large-v3}
+      - ASR_DEVICE=${WHISPER_DEVICE:-cpu}
+    volumes:
+      - ./config/whisper/cache:/root/.cache
+    ports:
+      - "${WHISPER_PORT}:9000"
+    networks:
+      - media_net
+    deploy:
+      resources:
+        limits:
+          cpus: '12.0'
+          memory: ${WHISPER_MEMORY:-8G}
+          pids: 200
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./config/ollama:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT}:11434"
+    networks:
+      - media_net
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: ${OLLAMA_MEMORY:-8G}
+          pids: 200
+
+  legendas-webui:
+    build:
+      context: ./scripts/webui-legendas
+      dockerfile: Dockerfile
+    container_name: legendas-webui
+    restart: unless-stopped
+    ports:
+      - "8990:8989"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./media:/media:ro
+      - ./config/bazarr/log:/bazarr-logs:ro
+    environment:
+      - MEDIA_DIR=/media
+      - BAZARR_LOG_DIR=/bazarr-logs
+      - REFRESH_INTERVAL=15
+    networks:
+      - media_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
 
 networks:
   media_net:
