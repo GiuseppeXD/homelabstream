@@ -150,7 +150,12 @@ def get_recent_srt():
     return files
 
 def get_current_processing():
-    """Try to identify what file is currently being processed."""
+    """Try to identify what file is currently being processed.
+    
+    Only reports files that are actively being worked on:
+    - Whisper: log entry exists AND .en.srt does NOT exist yet (or was created very recently)
+    - Ollama: .en.srt exists AND .pt-BR.srt does NOT exist yet (within last 240 min)
+    """
     result = {"whisper": None, "ollama": None}
     
     # Check bazarr logs for whisper processing (read from end, stop at first match)
@@ -186,15 +191,27 @@ def get_current_processing():
             if whisper_lines:
                 # Process most recent whisper line
                 log_text = '\n'.join(whisper_lines)
-                matches = re.findall(r'for\s+"?\(?(/media/.+?\.(?:mkv|mp4|avi))', log_text)
+                matches = re.findall(r'for\s+"?\?(/media/.+?\.(?:mkv|mp4|avi))', log_text)
                 if matches:
-                    result["whisper"] = os.path.basename(matches[0])
+                    mkv_path = matches[0]
+                    base = os.path.splitext(mkv_path)[0]
+                    en_srt = base + '.en.srt'
+                    # Only show as processing if EN subtitle doesn't exist yet
+                    # or was created in the last 5 minutes (race condition)
+                    if not os.path.exists(en_srt):
+                        result["whisper"] = os.path.basename(mkv_path)
+                    elif os.path.exists(en_srt):
+                        # Check if .en.srt is very recent (< 5 min) - whisper might still be finishing
+                        en_mtime = os.path.getmtime(en_srt)
+                        if time.time() - en_mtime < 300:
+                            result["whisper"] = os.path.basename(mkv_path)
     except Exception as e:
         print(f"Error reading bazarr logs: {e}")
     
     # Check for EN SRT files without PT-BR (waiting for ollama)
+    # Only consider files from last 240 min (4h) to avoid showing stale failed jobs
     try:
-        recent_files = run_cmd(f"find {MEDIA_DIR} -name '*.en.srt' -mmin -180 2>/dev/null")
+        recent_files = run_cmd(f"find {MEDIA_DIR} -name '*.en.srt' -mmin -240 2>/dev/null")
         if recent_files:
             lines = [l.strip() for l in recent_files.split('\n') if l.strip()]
             for f in lines:
