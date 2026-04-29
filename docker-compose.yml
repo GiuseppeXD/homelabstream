@@ -93,6 +93,10 @@ services:
     networks:
       - media_net
   bazarr:
+    # NOTA: post-processing script configurado mas provavelmente não funciona
+    # para legendas geradas pelo Whisper. O pipeline automático EN->PT-BR
+    # agora é gerenciado pelo legendas-webui (watchdog + fila).
+    # Deixado aqui como fallback caso seja útil no futuro.
     image: lscr.io/linuxserver/bazarr@sha256:648f694532a3a53d8cf78bc888919ef538659bad41af4c680b0427ad1047d171 # v1.5.3-ls328
     container_name: bazarr
     mem_limit: 512m
@@ -197,16 +201,24 @@ services:
       dockerfile: Dockerfile
     container_name: legendas-webui
     restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    group_add:
+      - "968"  # host docker group GID for /var/run/docker.sock access
     ports:
       - "8990:8989"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./media:/media:ro
+      - ./media:/media:rw
       - ./config/bazarr/log:/bazarr-logs:ro
     environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
       - MEDIA_DIR=/media
       - BAZARR_LOG_DIR=/bazarr-logs
       - REFRESH_INTERVAL=15
+      - TRANSLATE_MODEL=${TRANSLATE_MODEL:-qwen2.5:7b}
+      - BATCH_SIZE=40
+      - NUM_PREDICT=2048
     networks:
       - media_net
     deploy:

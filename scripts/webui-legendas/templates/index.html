@@ -144,12 +144,25 @@
             border-radius: 3px;
             transition: width 0.5s;
         }
+
+        .btn {
+            padding: 4px 12px;
+            border-radius: 6px;
+            border: none;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.8; }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn:disabled { background: #475569; cursor: not-allowed; opacity: 0.5; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🎬 Monitor de Legendas</h1>
+            <h1>Monitor de Legendas</h1>
             <p>Pipeline: Whisper + Ollama + Bazarr</p>
             <div class="last-update" id="last-update">Carregando...</div>
         </header>
@@ -172,6 +185,16 @@
 
         <div class="card" style="margin-bottom: 30px;">
             <div class="card-header">
+                <span class="icon">🔄</span>
+                <h2>Fila de Tradução</h2>
+            </div>
+            <div id="translate-queue-content">
+                <div class="loading"><div class="spinner"></div>Carregando fila...</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 30px;">
+            <div class="card-header">
                 <span class="icon">📁</span>
                 <h2>Legendas Recentes (últimas 48h)</h2>
             </div>
@@ -187,11 +210,11 @@
         function getStatusBadge(status, processing) {
             if (status.includes('Up')) {
                 if (processing === 'processing') {
-                    return '<span class="status-badge status-processing">🔄 Processando</span>';
+                    return '<span class="status-badge status-processing">Processando</span>';
                 }
-                return '<span class="status-badge status-running">✅ Rodando</span>';
+                return '<span class="status-badge status-running">Rodando</span>';
             }
-            return '<span class="status-badge status-stopped">❌ Parado</span>';
+            return '<span class="status-badge status-stopped">Parado</span>';
         }
 
         function renderContainers(data) {
@@ -305,6 +328,56 @@
             container.innerHTML = html;
         }
 
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return m > 0 ? `${m}m ${s}s` : `${s}s`;
+        }
+
+        function renderTranslationQueue(data) {
+            const container = document.getElementById('translate-queue-content');
+            const translation = data.translation || {};
+            const current = translation.current;
+            const pending = translation.pending || [];
+            const completed = translation.completed || [];
+            
+            let html = '<table class="srt-table">';
+            html += '<thead><tr><th>Arquivo</th><th>Status</th><th>Tempo</th><th>Ação</th></tr></thead><tbody>';
+            
+            if (current) {
+                html += `<tr>
+                    <td class="filename" title="${current.path}">${current.filename}</td>
+                    <td>🔄 Rodando</td>
+                    <td>${formatTime(current.elapsed)}</td>
+                    <td><button class="btn btn-danger" onclick="cancelTranslation()">Cancelar</button></td>
+                </tr>`;
+            }
+            
+            pending.forEach(path => {
+                const filename = path.split('/').pop();
+                html += `<tr>
+                    <td class="filename" title="${path}">${filename}</td>
+                    <td>⏳ Pendente</td>
+                    <td>-</td>
+                    <td><button class="btn btn-primary" onclick="triggerTranslation('${path}')">Traduzir agora</button></td>
+                </tr>`;
+            });
+            
+            if (!current && pending.length === 0) {
+                html += `<tr><td colspan="4" style="text-align:center;color:#64748b;">Fila vazia</td></tr>`;
+            }
+            
+            html += '</tbody></table>';
+            
+            if (completed.length > 0) {
+                html += '<div style="margin-top: 15px; color: #64748b; font-size: 0.8rem;">';
+                html += `Últimos concluídos: ${completed.slice(-3).map(c => c.filename).join(', ')}`;
+                html += '</div>';
+            }
+            
+            container.innerHTML = html;
+        }
+
         function renderSrtFiles(files) {
             const container = document.getElementById('srt-content');
             
@@ -339,16 +412,36 @@
             `;
         }
 
+        async function cancelTranslation() {
+            try {
+                await fetch('/api/translate/cancel', {method: 'POST'});
+                fetchStatus();
+            } catch (e) {
+                console.error('Cancel failed:', e);
+            }
+        }
+
+        async function triggerTranslation(path) {
+            try {
+                await fetch('/api/translate/trigger', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path})
+                });
+                fetchStatus();
+            } catch (e) {
+                console.error('Trigger failed:', e);
+            }
+        }
+
         async function fetchStatus() {
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
                 
-                // Debug: log raw data to browser console
-                console.log('API status:', data);
-                
                 renderContainers(data);
                 renderProcessing(data.current_processing);
+                renderTranslationQueue(data);
                 renderSrtFiles(data.srt_files);
                 
                 document.getElementById('last-update').textContent = 

@@ -9,14 +9,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
     && cp /tmp/docker/docker /usr/local/bin/docker \
     && rm -rf /tmp/docker /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir flask
+RUN pip install --no-cache-dir flask watchdog requests
 
 COPY app.py /app/
 COPY templates/ /app/templates/
 COPY static/ /app/static/
 
 ENV MEDIA_DIR=/media
-ENV REFRESH_INTERVAL=5
+ENV BAZARR_LOG_DIR=/bazarr-logs
+ENV OLLAMA_URL=http://ollama:11434/api/generate
+ENV TRANSLATE_MODEL=qwen2.5:7b
+ENV REFRESH_INTERVAL=15
 ENV FLASK_APP=app.py
 
 EXPOSE 8989
