@@ -150,7 +150,7 @@ services:
       - media_net
 
   whisper-asr:
-    image: onerahmet/openai-whisper-asr-webservice:latest
+    image: onerahmet/openai-whisper-asr-webservice@sha256:03b402335881cdab2e4939b24620809df8d6ceec3bf2712217d41c8761a0f5d4 # v1.9.1
     container_name: whisper-asr
     restart: unless-stopped
     environment:
@@ -173,7 +173,7 @@ services:
           pids: 200
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama@sha256:05ab093b257a54318fba39293f1640d53b507d1edec8fa6ca2d3e1817c02e53b
     container_name: ollama
     restart: unless-stopped
     environment:
