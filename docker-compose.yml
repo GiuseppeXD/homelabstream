@@ -158,6 +158,7 @@ services:
       - ASR_ENGINE=faster_whisper
       - ASR_MODEL=${WHISPER_MODEL:-large-v3}
       - ASR_DEVICE=${WHISPER_DEVICE:-cpu}
+      - OMP_NUM_THREADS=${WHISPER_CPU_THREADS:-12}
     volumes:
       - ./config/whisper/cache:/root/.cache
     ports:
