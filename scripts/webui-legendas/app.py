@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, make_response
 import subprocess
 import json
 import os
@@ -191,7 +191,8 @@ def get_current_processing():
             if whisper_lines:
                 # Process most recent whisper line
                 log_text = '\n'.join(whisper_lines)
-                matches = re.findall(r'for\s+"?\?(/media/.+?\.(?:mkv|mp4|avi))', log_text)
+                # Match: "for /media/..." or "for \"/media/...\" or "for ?(/media/...)"
+                matches = re.findall(r'for\s+"?\??(/media/.+?\.(?:mkv|mp4|avi))', log_text)
                 if matches:
                     mkv_path = matches[0]
                     base = os.path.splitext(mkv_path)[0]
@@ -207,6 +208,22 @@ def get_current_processing():
                             result["whisper"] = os.path.basename(mkv_path)
     except Exception as e:
         print(f"Error reading bazarr logs: {e}")
+    
+    # Fallback: if whisper CPU is high but we couldn't identify the file from logs,
+    # at least report that whisper is actively processing
+    if result["whisper"] is None:
+        try:
+            output = run_cmd("docker stats --no-stream whisper-asr")
+            lines = [l.strip() for l in output.splitlines() if l.strip()]
+            if len(lines) >= 2:
+                parts = lines[1].split()
+                if len(parts) >= 3:
+                    cpu_str = parts[2].replace('%', '')
+                    cpu_val = float(cpu_str)
+                    if cpu_val > 80:
+                        result["whisper"] = "Processando (arquivo não identificado)"
+        except:
+            pass
     
     # Check for EN SRT files without PT-BR (waiting for ollama)
     # Only consider files from last 240 min (4h) to avoid showing stale failed jobs
@@ -236,7 +253,7 @@ def index():
 
 @app.route("/api/status")
 def api_status():
-    return jsonify({
+    resp = make_response(jsonify({
         "whisper": {
             "status": get_container_status("whisper-asr"),
             "stats": get_container_stats("whisper-asr"),
@@ -256,7 +273,11 @@ def api_status():
         "current_processing": get_current_processing(),
         "srt_files": get_recent_srt(),
         "timestamp": datetime.now().strftime("%H:%M:%S")
-    })
+    }))
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8989, debug=False)

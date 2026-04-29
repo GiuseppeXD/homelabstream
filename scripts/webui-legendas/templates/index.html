@@ -344,6 +344,9 @@
                 const response = await fetch('/api/status');
                 const data = await response.json();
                 
+                // Debug: log raw data to browser console
+                console.log('API status:', data);
+                
                 renderContainers(data);
                 renderProcessing(data.current_processing);
                 renderSrtFiles(data.srt_files);
