@@ -147,6 +147,7 @@ services:
       - 1.0.0.1
     environment:
       - TZ=${TZ}
+      - LOG_LEVEL=info
     ports:
       - "${JELLYSEERR_PORT}:5055"
     volumes:

@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install Docker CLI (static binary) for monitoring containers
 # Pinning docker-27.3.1 to avoid unexpected CLI changes
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates ffmpeg \
     && curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.3.1.tgz | tar -xz -C /tmp \
     && cp /tmp/docker/docker /usr/local/bin/docker \
     && rm -rf /tmp/docker /var/lib/apt/lists/*

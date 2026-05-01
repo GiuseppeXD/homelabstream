@@ -157,6 +157,23 @@
         .btn-primary { background: #2563eb; color: white; }
         .btn-danger { background: #dc2626; color: white; }
         .btn:disabled { background: #475569; cursor: not-allowed; opacity: 0.5; }
+        .pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #334155;
+            color: #cbd5e1;
+            font-size: 0.75rem;
+            white-space: nowrap;
+        }
+        .error-box {
+            background: #450a0a;
+            border: 1px solid #7f1d1d;
+            color: #fecaca;
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -195,6 +212,16 @@
 
         <div class="card" style="margin-bottom: 30px;">
             <div class="card-header">
+                <span class="icon">🧩</span>
+                <h2>Candidatos Para Tradução</h2>
+            </div>
+            <div id="candidate-content">
+                <div class="loading"><div class="spinner"></div>Procurando legendas aproveitáveis...</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 30px;">
+            <div class="card-header">
                 <span class="icon">📁</span>
                 <h2>Legendas Recentes (últimas 48h)</h2>
             </div>
@@ -206,6 +233,24 @@
 
     <script>
         const REFRESH_INTERVAL = {{ refresh_interval }} * 1000;
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function encodeJob(job) {
+            return encodeURIComponent(JSON.stringify(job));
+        }
+
+        function filenameFromJob(job) {
+            if (!job) return '-';
+            return job.filename || (job.source || job.path || '').split('/').pop();
+        }
 
         function getStatusBadge(status, processing) {
             if (status.includes('Up')) {
@@ -346,20 +391,19 @@
             
             if (current) {
                 html += `<tr>
-                    <td class="filename" title="${current.path}">${current.filename}</td>
-                    <td>🔄 Rodando</td>
+                    <td class="filename" title="${escapeHtml(current.source)}">${escapeHtml(filenameFromJob(current))}</td>
+                    <td>🔄 Rodando <span class="pill">${escapeHtml(current.language || 'unknown')}</span></td>
                     <td>${formatTime(current.elapsed)}</td>
                     <td><button class="btn btn-danger" onclick="cancelTranslation()">Cancelar</button></td>
                 </tr>`;
             }
-            
-            pending.forEach(path => {
-                const filename = path.split('/').pop();
+
+            pending.forEach(job => {
                 html += `<tr>
-                    <td class="filename" title="${path}">${filename}</td>
-                    <td>⏳ Pendente</td>
+                    <td class="filename" title="${escapeHtml(job.source || job.path)}">${escapeHtml(filenameFromJob(job))}</td>
+                    <td>⏳ Pendente <span class="pill">${escapeHtml(job.language || 'unknown')}</span></td>
                     <td>-</td>
-                    <td><button class="btn btn-primary" onclick="triggerTranslation('${path}')">Traduzir agora</button></td>
+                    <td><button class="btn btn-primary" data-translate-job="${encodeJob(job)}">Traduzir agora</button></td>
                 </tr>`;
             });
             
@@ -371,11 +415,44 @@
             
             if (completed.length > 0) {
                 html += '<div style="margin-top: 15px; color: #64748b; font-size: 0.8rem;">';
-                html += `Últimos concluídos: ${completed.slice(-3).map(c => c.filename).join(', ')}`;
+                html += `Últimos concluídos: ${completed.slice(-3).map(c => escapeHtml(filenameFromJob(c))).join(', ')}`;
                 html += '</div>';
             }
             
             container.innerHTML = html;
+        }
+
+        function renderCandidates(payload) {
+            const container = document.getElementById('candidate-content');
+            const candidates = (payload && payload.items) || [];
+            const error = payload && payload.error;
+
+            if (error) {
+                container.innerHTML = `<div class="error-box">Erro no scanner: ${escapeHtml(error)}</div>`;
+                return;
+            }
+
+            if (!candidates.length) {
+                container.innerHTML = '<p style="color: #64748b; text-align: center;">Nenhum candidato pendente. PT-BR já existe ou o Bazarr ainda não gerou/encontrou legenda aproveitável.</p>';
+                return;
+            }
+
+            const rows = candidates.slice(0, 20).map(job => `
+                <tr>
+                    <td><span class="pill">${escapeHtml(job.source_type)}</span></td>
+                    <td><span class="pill">${escapeHtml(job.language || 'unknown')}</span></td>
+                    <td class="filename" title="${escapeHtml(job.source)}">${escapeHtml(filenameFromJob(job))}</td>
+                    <td>${escapeHtml(job.reason || '-')}</td>
+                    <td><button class="btn btn-primary" data-translate-job="${encodeJob(job)}">Traduzir</button></td>
+                </tr>
+            `).join('');
+
+            container.innerHTML = `
+                <table class="srt-table">
+                    <thead><tr><th>Origem</th><th>Idioma</th><th>Arquivo</th><th>Motivo</th><th>Ação</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
         }
 
         function renderSrtFiles(files) {
@@ -388,11 +465,11 @@
 
             const rows = files.map(f => `
                 <tr>
-                    <td>${f.flag}</td>
-                    <td class="filename" title="${f.path}">${f.filename}</td>
-                    <td>${f.size}</td>
-                    <td>${f.ago}</td>
-                    <td style="color: #64748b; font-size: 0.8rem;">${f.timestamp}</td>
+                    <td>${escapeHtml(f.flag)}</td>
+                    <td class="filename" title="${escapeHtml(f.path)}">${escapeHtml(f.filename)}</td>
+                    <td>${escapeHtml(f.size)}</td>
+                    <td>${escapeHtml(f.ago)}</td>
+                    <td style="color: #64748b; font-size: 0.8rem;">${escapeHtml(f.timestamp)}</td>
                 </tr>
             `).join('');
 
@@ -421,12 +498,12 @@
             }
         }
 
-        async function triggerTranslation(path) {
+        async function triggerTranslation(path, job) {
             try {
                 await fetch('/api/translate/trigger', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({path})
+                    body: JSON.stringify(job ? {job} : {path})
                 });
                 fetchStatus();
             } catch (e) {
@@ -442,6 +519,7 @@
                 renderContainers(data);
                 renderProcessing(data.current_processing);
                 renderTranslationQueue(data);
+                renderCandidates(data.candidates);
                 renderSrtFiles(data.srt_files);
                 
                 document.getElementById('last-update').textContent = 
@@ -450,8 +528,25 @@
                 console.error('Error fetching status:', error);
                 document.getElementById('last-update').textContent = 
                     'Erro ao atualizar - tentando novamente...';
+                ['containers-grid', 'processing-content', 'translate-queue-content', 'candidate-content', 'srt-content'].forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element && element.textContent.includes('Carregando')) {
+                        element.innerHTML = '<div class="error-box">Falha ao carregar dados da API. Veja os logs do legendas-webui.</div>';
+                    }
+                });
             }
         }
+
+        document.addEventListener('click', event => {
+            const button = event.target.closest('[data-translate-job]');
+            if (!button) return;
+            try {
+                const job = JSON.parse(decodeURIComponent(button.dataset.translateJob));
+                triggerTranslation(null, job);
+            } catch (error) {
+                console.error('Invalid translate job:', error);
+            }
+        });
 
         // Initial load
         fetchStatus();
