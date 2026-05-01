@@ -1,98 +1,245 @@
-# Homelab Jellyfin + qBittorrent + Prowlarr + Bazarr Stack
+# Homelab Media Stack
 
-A minimal Docker Compose stack to self-host Jellyfin, qBittorrent, Prowlarr, and Bazarr on your local network, with FlareSolverr solving Cloudflare/JS challenges for stubborn indexers. The stack keeps configuration/state on disk so you can iterate safely while testing other homelab services later.
+Stack Docker Compose para Jellyfin, downloads, automacao de catalogo e pipeline local de legendas com Whisper-ASR e Ollama.
 
-## Prerequisites
+## Servicos
 
-- Linux host with Docker Engine and Docker Compose plugin (`docker compose` command).
-- Local storage for media (e.g., `/srv/media` or an external disk) that can be bind-mounted.
-- Only download and share torrents that are legal in your jurisdiction (Linux ISOs, public-domain content, etc.).
-- Allow outbound HTTP/HTTPS traffic so FlareSolverr can solve Cloudflare challenges for protected indexers.
-- (Optional) VPN/proxy credentials if you later reintroduce a tunnel container such as Gluetun.
+| Servico | Porta host padrao | Funcao |
+| --- | ---: | --- |
+| Jellyfin | `8096` / `8920` | Biblioteca e streaming de midia |
+| qBittorrent | `8080`, `6881/tcp`, `6881/udp` | Cliente torrent |
+| Radarr | `7878` | Automacao de filmes |
+| Sonarr | `8989` | Automacao de series |
+| Prowlarr | `9696` | Indexadores para Radarr/Sonarr |
+| Bazarr | `6767` | Busca, sincronizacao e geracao de legendas |
+| Jellyseerr | `5055` | Pedidos de filmes/series integrados ao Jellyfin |
+| FlareSolverr | `8191` | Resolver desafios Cloudflare/JS de indexadores |
+| Whisper-ASR | `9000` | API local de transcricao de audio para legenda |
+| Ollama | `11434` | LLM local usado para traduzir legendas |
+| legendas-webui | `8990` | Dashboard e fila de traducao EN -> PT-BR |
 
-## Files
+Todos os servicos ficam na rede bridge `media_net`. Use os nomes dos servicos para comunicacao interna, por exemplo `http://qbittorrent:8080`, `http://radarr:7878`, `http://sonarr:8989`, `http://ollama:11434` e `http://whisper-asr:9000`.
 
-- `docker-compose.yml` – Defines Jellyfin, qBittorrent, Radarr, Sonarr, Prowlarr, Bazarr, and FlareSolverr containers, persistent volumes, and published ports.
-- `.env.example` – Template for environment variables; copy to `.env` and adjust for your system.
-- `config/qbittorrent` – qBittorrent settings and torrents.
-- `config/jellyfin` – Jellyfin configuration, metadata, and user database.
-- `config/radarr` – Radarr configuration/database.
-- `config/sonarr` – Sonarr configuration/database.
-- `config/prowlarr` – Prowlarr configuration, indexers, and logs.
-- `config/bazarr` – Bazarr configuration and subtitle cache.
-- `media/` – Placeholder mount for libraries and downloads. Replace with bind mounts to your actual media paths if desired.
+## Estrutura
 
-## Setup
+- `docker-compose.yml`: define os servicos, imagens pinadas por digest, portas, rede, limites de recurso e volumes.
+- `.env.example`: template das variaveis exigidas pelo Compose. Copie para `.env` e ajuste localmente.
+- `config/`: dados persistentes dos containers. Esta pasta e ignorada pelo Git.
+- `media/`: downloads e bibliotecas de filmes/series. Esta pasta e ignorada pelo Git.
+- `scripts/webui-legendas/`: app Flask usado pelo servico `legendas-webui`.
+- `scripts/translate-srt-ollama.py`: tradutor standalone de `.srt` via Ollama.
+- `scripts/bazarr-translate-postprocess.sh`: fallback legado para post-processing do Bazarr. O fluxo principal atual e o watchdog/fila do `legendas-webui`.
+- `scripts/monitor-legendas.sh`: monitor de terminal para Whisper, Ollama, Bazarr e arquivos `.srt` recentes.
 
-1. **Clone / copy this repo** onto the host that will run your media stack.
-2. **Prepare env vars**:
-   ```bash
-   cp .env.example .env
-   # edit .env with your preferred editor (adjust PUID/PGID/TZ and override service ports if you need)
-   ```
-   - `PUID`/`PGID`: match the UID/GID that should own the media data (typically your Linux user).
-   - `TZ`: time zone string (e.g., `America/Sao_Paulo`).
-   - `QBITTORRENT_WEBUI_PORT`: host port for the qBittorrent Web UI (default 8080).
-   - `PROWLARR_PORT`: host port for Prowlarr (default 9696).
-   - `BAZARR_PORT`: host port for Bazarr (default 6767).
-   - `FLARESOLVERR_PORT`: host port for FlareSolverr’s API (default 8191).
-   - `RADARR_PORT`: host port for Radarr (default 7878).
-   - `SONARR_PORT`: host port for Sonarr (default 8989).
-   - **Optional dedicated service account**:
-     ```bash
-     sudo groupadd -r homelab
-     sudo useradd -r -m -g homelab -s /usr/sbin/nologin homelab
-     id homelab   # copy UID -> PUID and GID -> PGID into .env
-     sudo chown -R homelab:homelab config media
-     ```
-     This keeps container-owned files separated from your personal account.
-3. **Create bind mount directories** (adjust paths if you want to use storage outside the repo):
-   ```bash
-   mkdir -p config/{qbittorrent,jellyfin,radarr,sonarr,prowlarr,bazarr}
-   mkdir -p media/{movies,tv,transcode,downloads/completed,downloads/incomplete}
-   ```
-   - Replace `./media` with actual host paths by editing `docker-compose.yml` if your media already lives elsewhere.
-4. **Launch the stack**:
-   ```bash
-   docker compose up -d
-   ```
-5. **Initial Jellyfin configuration**:
-   - Go to `http://<host-ip>:8096` (HTTPS optional on `8920` once you add a cert).
-   - Follow the Jellyfin wizard to create an admin user, choose metadata language, and add libraries pointing at `/media/movies`, `/media/tv`, or `/media/downloads/completed`.
-   - Optional: enable hardware transcoding from the admin dashboard if your host supports it.
-6. **Initial qBittorrent configuration**:
-   - Run `docker compose logs qbittorrent | grep -i password` to grab the random password the LinuxServer image prints on first boot, then browse to `http://<host-ip>:<QBITTORRENT_WEBUI_PORT>` (default `8080`), login with `admin` / `<generated password>`, and change it immediately.
-   - Open **Tools → Options → Downloads** and set:
-     - Default save path: `/downloads/completed`
-     - Keep incomplete torrents in: `/downloads/incomplete`
-   - Optionally enable the Web UI to require HTTPS or limit IP ranges.
-   - Add RSS feeds or indexers, or integrate with automation tools by pointing them to `http://qbittorrent:8080` on the internal Docker network (`media_net`)—the container always listens on 8080 internally even if you remap the host port.
-7. **Initial Radarr configuration**:
-   - Browse to `http://<host-ip>:<RADARR_PORT>`, run the first-run wizard, and set the root folders to `/media/movies` (or whichever subdirectory holds movies) plus the download folder `/downloads` for import.
-   - Under **Settings → Download Clients**, add qBittorrent with `http://qbittorrent:8080` and the credentials you chose earlier.
-   - Set quality profiles, lists, and root folders so Radarr can rename/move movies out of `/downloads` into `/media/movies`.
-8. **Initial Sonarr configuration**:
-   - Go to `http://<host-ip>:<SONARR_PORT>`, run the wizard, set root folders to `/media/tv`, and point the download folder to `/downloads`.
-   - Add qBittorrent as a download client (same internal URL/credentials as above).
-   - Create quality profiles, language preferences, and (optionally) connect to Trakt/Lists so Sonarr monitors the series you care about.
-9. **Initial Prowlarr configuration (with FlareSolverr)**:
-   - Visit `http://<host-ip>:<PROWLARR_PORT>`.
-   - Create an admin password, then add your preferred indexers.
-   - This compose file pins both Prowlarr’s and FlareSolverr’s DNS to Cloudflare (`1.1.1.1`/`1.0.0.1`) so stubborn trackers resolve correctly; adjust the `dns:` sections if your network needs different resolvers.
-   - Add qBittorrent as a download client using the internal address `http://qbittorrent:8080` and the credentials you set above.
-   - Under **Applications**, add Radarr and Sonarr (use `http://radarr:7878` / `http://sonarr:8989`) so Prowlarr can sync indexers to them automatically.
-   - If an indexer returns Cloudflare/JavaScript challenges, add FlareSolverr under **Settings → Indexers → Add indexer → FlareSolverr** with `http://flaresolverr:8191`, then assign that solver to the affected indexers.
-10. **Initial Bazarr configuration**:
-   - Open `http://<host-ip>:<BAZARR_PORT>`, create an API key/password.
-   - Under **Settings → Services** add Jellyfin via the internal URL `http://jellyfin:8096`, and qBittorrent (optional) via `http://qbittorrent:8080` to let Bazarr track download status.
-   - Choose subtitle languages and point Bazarr’s paths to `/media/movies` and `/media/tv` so downloaded subtitles land next to your files.
+## Setup Inicial
 
-## Maintenance
+1. Copie o arquivo de ambiente:
 
-- Update images: `docker compose pull && docker compose up -d`.
-- View logs: `docker compose logs -f flaresolverr`, `docker compose logs -f jellyfin`, `docker compose logs -f qbittorrent`, `docker compose logs -f radarr`, `docker compose logs -f sonarr`, `docker compose logs -f prowlarr`, `docker compose logs -f bazarr`.
-- Stop the stack: `docker compose down` (data persists because it lives in `config/` and `media/`).
+```bash
+cp .env.example .env
+```
 
-## Extending The Homelab
+2. Ajuste `.env`:
 
-This compose project already defines an isolated bridge network (`media_net`). Additional services (e.g., Sonarr/Radarr/Lidarr, Traefik) can be added later by attaching them to the same network to share media mounts or reverse proxy access. Automation tools can drop completed downloads into `/downloads/completed`, which Jellyfin (via `/media`) already monitors, so libraries stay in sync automatically while Prowlarr/Bazarr handle discovery and subtitles.
+```dotenv
+PUID=961
+PGID=961
+TZ=America/Sao_Paulo
+TRANSLATE_MODEL=qwen2.5:7b
+```
+
+`PUID` e `PGID` devem ser o UID/GID que vai possuir os volumes escritos pelos containers. Neste setup, os volumes principais estao sob ownership do usuario de servico `homelab:homelab` (`961:961`). Se usar outro usuario, ajuste `.env` e ownership juntos.
+
+3. Crie os diretorios persistentes:
+
+```bash
+mkdir -p config/{qbittorrent,jellyfin,radarr,sonarr,prowlarr,bazarr,jellyseerr,whisper/cache,ollama}
+mkdir -p media/{downloads,movies,series}
+```
+
+4. Aplique ownership nos volumes que usam `PUID`/`PGID`:
+
+```bash
+sudo chown -R 961:961 config/{qbittorrent,jellyfin,radarr,sonarr,prowlarr,bazarr,whisper,ollama} media
+```
+
+Se o usuario de servico for outro, substitua `961:961` por `$(id -u <usuario>):$(id -g <usuario>)`.
+
+5. Garanta permissao especifica para Jellyseerr:
+
+```bash
+sudo chown -R 1000:1000 config/jellyseerr
+```
+
+O container do Jellyseerr nao usa `PUID`/`PGID` neste Compose e normalmente grava como UID/GID `1000:1000`.
+
+6. Suba a stack:
+
+```bash
+docker compose up -d --build
+```
+
+7. Baixe o modelo de traducao no Ollama:
+
+```bash
+docker compose exec ollama ollama pull qwen2.5:7b
+```
+
+Se `TRANSLATE_MODEL` for outro, puxe o mesmo modelo configurado no `.env`.
+
+## Ownership E Volumes
+
+Os volumes sao bind mounts locais, nao volumes nomeados do Docker. Isso facilita backup e manutencao, mas exige ownership correto no host.
+
+| Caminho host | Caminho container | Escritor esperado |
+| --- | --- | --- |
+| `./config/qbittorrent` | `/config` | qBittorrent com `PUID:PGID` |
+| `./media/downloads` | `/downloads` | qBittorrent com `PUID:PGID` |
+| `./config/radarr` | `/config` | Radarr com `PUID:PGID` |
+| `./config/sonarr` | `/config` | Sonarr com `PUID:PGID` |
+| `./config/prowlarr` | `/config` | Prowlarr com `PUID:PGID` |
+| `./config/bazarr` | `/config` | Bazarr com `PUID:PGID` |
+| `./config/jellyfin` | `/config` | Jellyfin com `PUID:PGID` |
+| `./media` | `/media` | Radarr, Sonarr, Bazarr, Jellyfin e `legendas-webui` |
+| `./config/jellyseerr` | `/app/config` | Usuario da imagem Jellyseerr, normalmente `1000:1000` |
+| `./config/whisper/cache` | `/root/.cache` | Whisper-ASR |
+| `./config/ollama` | `/root/.ollama` | Ollama |
+| `/var/run/docker.sock` | `/var/run/docker.sock:ro` | `legendas-webui`, somente leitura |
+
+O `legendas-webui` roda explicitamente como `user: "${PUID}:${PGID}"`, por isso precisa conseguir escrever em `./media`. Ele tambem recebe `group_add: "968"` para acessar `/var/run/docker.sock`; se o GID do grupo `docker` do host for diferente, atualize esse valor no `docker-compose.yml`.
+
+## Execucao
+
+Subir ou recriar tudo:
+
+```bash
+docker compose up -d --build
+```
+
+Subir somente a Web UI apos alterar `scripts/webui-legendas/`:
+
+```bash
+docker compose up -d --build legendas-webui
+```
+
+Ver estado dos servicos:
+
+```bash
+docker compose ps
+```
+
+Ver logs:
+
+```bash
+docker compose logs -f bazarr
+docker compose logs -f legendas-webui
+docker compose logs -f whisper-asr
+docker compose logs -f ollama
+```
+
+Atualizar imagens pinadas no Compose exige editar os digests em `docker-compose.yml`. Para baixar as imagens configuradas e recriar containers:
+
+```bash
+docker compose pull
+docker compose up -d --build
+```
+
+Parar sem apagar dados:
+
+```bash
+docker compose down
+```
+
+## Configuracao Dos Servicos
+
+### qBittorrent
+
+- Acesse `http://<host>:8080`.
+- Usuario inicial: `admin`.
+- A senha inicial e impressa nos logs do container na primeira inicializacao.
+- Configure downloads para `/downloads` ou subpastas de `/downloads`.
+- Para integracoes internas, use `http://qbittorrent:8080`.
+
+### Radarr E Sonarr
+
+- Radarr: `http://<host>:7878`.
+- Sonarr: `http://<host>:8989`.
+- Configure qBittorrent como download client usando `qbittorrent:8080`.
+- Configure root folders em `/media/movies` e `/media/series`.
+- Garanta que imports e renames preservem arquivos dentro de `/media`, pois Jellyfin, Bazarr e `legendas-webui` enxergam esse mesmo mount.
+
+### Prowlarr E FlareSolverr
+
+- Prowlarr: `http://<host>:9696`.
+- FlareSolverr interno: `http://flaresolverr:8191`.
+- O Compose fixa DNS Cloudflare (`1.1.1.1` e `1.0.0.1`) nos servicos que acessam indexadores.
+- Sincronize indexadores do Prowlarr para Radarr e Sonarr usando `http://radarr:7878` e `http://sonarr:8989`.
+
+### Jellyfin E Jellyseerr
+
+- Jellyfin: `http://<host>:8096`.
+- Jellyseerr: `http://<host>:5055`.
+- No Jellyfin, aponte bibliotecas para `/media/movies` e `/media/series`.
+- No Jellyseerr, integre com Jellyfin, Radarr e Sonarr usando URLs internas da rede Compose.
+
+### Bazarr, Whisper-ASR E Ollama
+
+- Bazarr: `http://<host>:6767`.
+- Whisper-ASR: `http://<host>:9000`.
+- Ollama: `http://<host>:11434`.
+- Configure Bazarr para trabalhar sobre `/media/movies` e `/media/series`.
+- O Whisper-ASR usa `ASR_ENGINE=faster_whisper` e `ASR_MODEL=${WHISPER_MODEL:-large-v3}`.
+- O Ollama usa `TRANSLATE_MODEL` para traducoes EN -> PT-BR, por padrao `qwen2.5:7b`.
+
+## Pipeline De Legendas
+
+1. Bazarr busca ou gera legendas em ingles, normalmente como `*.en.srt`, ao lado do arquivo de midia em `/media/movies` ou `/media/series`.
+2. `legendas-webui` observa recursivamente `/media/movies` e `/media/series` com `watchdog`.
+3. Quando um `*.en.srt` aparece ou e modificado, o arquivo entra em uma fila de traducao em memoria.
+4. A Web UI chama a API do Ollama em `http://ollama:11434/api/generate`.
+5. A traducao e salva ao lado do original como `*.pt-BR.srt`.
+6. Se o `*.pt-BR.srt` ja existir, o job e ignorado para evitar sobrescrita.
+
+Acesse o dashboard em `http://<host>:8990`. Ele mostra status de Whisper-ASR, Ollama, Bazarr, fila de traducao e legendas recentes. A aplicacao usa Docker CLI dentro do container para ler `docker stats`, `docker ps` e logs do Bazarr via socket Docker montado somente leitura.
+
+Tambem e possivel monitorar via terminal:
+
+```bash
+./scripts/monitor-legendas.sh
+```
+
+Por padrao, esse script assume `MEDIA_DIR=/home/gluca/homelabs/media`. Override se rodar em outro caminho:
+
+```bash
+MEDIA_DIR=/caminho/para/media ./scripts/monitor-legendas.sh
+```
+
+## Validacao Rapida
+
+```bash
+docker compose config >/dev/null
+docker compose ps
+docker compose exec ollama ollama list
+```
+
+Para testar a traducao de um arquivo especifico:
+
+```bash
+docker compose exec -T legendas-webui python3 - <<'PY'
+import requests
+path = "/media/series/exemplo.en.srt"
+print(requests.post("http://127.0.0.1:8989/api/translate/trigger", json={"path": path}).json())
+PY
+```
+
+Substitua `path` por um arquivo real `*.en.srt` dentro de `/media/movies` ou `/media/series`.
+
+## Backups
+
+Faça backup de:
+
+- `.env`, armazenado fora do Git.
+- `config/`, com bancos e configuracoes dos apps.
+- `media/`, se este repositorio tambem for o local real da biblioteca.
+
+Nao versionar `config/`, `media/` ou `.env`; esses caminhos estao no `.gitignore` por conterem dados locais, midia, caches e possiveis tokens.
