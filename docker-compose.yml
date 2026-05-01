@@ -137,7 +137,8 @@ services:
     networks:
       - media_net
   jellyseerr:
-    image: fallenbagel/jellyseerr@sha256:4538137bc5af902dece165f2bf73776d9cf4eafb6dd714670724af8f3eb77764 # 2.7.3
+    image: ghcr.io/seerr-team/seerr@sha256:c4cbd5121236ac2f70a843a0b920b68a27976be57917555f1c45b08a1e6b2aad # v3.2.0
+    init: true
     container_name: jellyseerr
     mem_limit: 512m
     restart: unless-stopped
