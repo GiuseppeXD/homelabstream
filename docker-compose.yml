@@ -193,7 +193,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '8.0'
+          cpus: '12.0'
           memory: ${OLLAMA_MEMORY:-8G}
           pids: 200
 
@@ -218,9 +218,13 @@ services:
       - MEDIA_DIR=/media
       - BAZARR_LOG_DIR=/bazarr-logs
       - REFRESH_INTERVAL=15
-      - TRANSLATE_MODEL=${TRANSLATE_MODEL:-qwen2.5:7b}
+      - TRANSLATE_MODEL=${TRANSLATE_MODEL:-gemma3:4b}
+      - OLLAMA_URL=http://ollama:11434/api/generate
       - BATCH_SIZE=40
       - NUM_PREDICT=2048
+      - SUBTITLE_SCAN_INTERVAL=300
+      - SUBTITLE_SCAN_MIN_AGE=600
+      - SUBTITLE_AUTO_QUEUE_LIMIT=0
     networks:
       - media_net
     deploy:

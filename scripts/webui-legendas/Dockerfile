@@ -2,26 +2,23 @@ FROM python:3.12-slim@sha256:46cb7cc2877e60fbd5e21a9ae6115c30ace7a077b9f8772da87
 
 WORKDIR /app
 
-# Install Docker CLI (static binary) for monitoring containers
-# Pinning docker-27.3.1 to avoid unexpected CLI changes
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates ffmpeg \
     && curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.3.1.tgz | tar -xz -C /tmp \
     && cp /tmp/docker/docker /usr/local/bin/docker \
     && rm -rf /tmp/docker /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir flask watchdog requests
+COPY requirements.txt /app/
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py /app/
+COPY main.py config.py db.py jobs.py scanner.py watcher.py translate.py extractor.py docker_utils.py /app/
 COPY templates/ /app/templates/
 COPY static/ /app/static/
 
 ENV MEDIA_DIR=/media
-ENV BAZARR_LOG_DIR=/bazarr-logs
 ENV OLLAMA_URL=http://ollama:11434/api/generate
-ENV TRANSLATE_MODEL=qwen2.5:7b
+ENV TRANSLATE_MODEL=gemma3:4b
 ENV REFRESH_INTERVAL=15
-ENV FLASK_APP=app.py
 
 EXPOSE 8989
 
-CMD ["python3", "-m", "flask", "run", "--host=0.0.0.0", "--port=8989"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8989"]

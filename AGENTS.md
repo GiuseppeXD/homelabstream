@@ -10,7 +10,7 @@ Servicos atuais:
 
 - Jellyfin, qBittorrent, Radarr, Sonarr, Prowlarr, Bazarr, Jellyseerr e FlareSolverr.
 - Whisper-ASR e Ollama para pipeline local de legendas.
-- `legendas-webui`, app Flask em `scripts/webui-legendas/`, para dashboard e fila de traducao EN -> PT-BR.
+- `legendas-webui`, app FastAPI em `scripts/webui-legendas/`, para dashboard e fila de traducao EN -> PT-BR.
 
 ## Regras De Seguranca
 
@@ -83,13 +83,14 @@ Substitua `961:961` pelo `PUID:PGID` real caso o `.env` use outro usuario.
 - `legendas-webui` monta `/var/run/docker.sock` como somente leitura para consultar `docker ps`, `docker stats` e logs do Bazarr.
 - O dashboard observa `/media/series` e `/media/movies` por arquivos `*.en.srt`.
 - A traducao cria `*.pt-BR.srt` ao lado do arquivo original e nao sobrescreve se o destino ja existir.
-- A fila de traducao do `legendas-webui` e em memoria; reiniciar o container limpa a fila pendente.
+- A fila de traducao do `legendas-webui` persiste em SQLite (`/media/.legendas-webui/jobs.db`). Jobs sobrevivem a reinicializacao do container.
+- A UI usa WebSocket (`/ws`) para updates em tempo real, com fallback HTTP polling.
 - `scripts/bazarr-translate-postprocess.sh` e fallback legado. O fluxo principal de traducao e feito pelo `legendas-webui`.
 
 ## Como Alterar
 
 - Mudancas de orquestracao devem ficar em `docker-compose.yml` e `.env.example` quando criarem novas variaveis.
-- Mudancas no dashboard ficam em `scripts/webui-legendas/app.py`, `templates/` e, se existir, `static/`.
+- Mudancas no dashboard ficam em `scripts/webui-legendas/main.py`, `config.py`, `db.py`, `jobs.py`, `scanner.py`, `watcher.py`, `translate.py`, `extractor.py`, `docker_utils.py`, `templates/` e `static/`.
 - Se adicionar variavel de ambiente no Compose, documente no `README.md` e em `.env.example`.
 - Se adicionar volume, documente o ownership esperado no `README.md` e neste arquivo.
 - Prefira alteracoes pequenas e verificaveis.

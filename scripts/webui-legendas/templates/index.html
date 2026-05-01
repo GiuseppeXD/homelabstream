@@ -174,6 +174,15 @@
             padding: 12px;
             text-align: center;
         }
+        .ws-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 4px;
+        }
+        .ws-live { background: #4ade80; }
+        .ws-dead { background: #f87171; }
     </style>
 </head>
 <body>
@@ -181,7 +190,9 @@
         <header>
             <h1>Monitor de Legendas</h1>
             <p>Pipeline: Whisper + Ollama + Bazarr</p>
-            <div class="last-update" id="last-update">Carregando...</div>
+            <div class="last-update" id="last-update">
+                <span class="ws-indicator ws-dead" id="ws-dot"></span>Carregando...
+            </div>
         </header>
 
         <div class="grid" id="containers-grid">
@@ -193,7 +204,7 @@
         <div class="card" style="margin-bottom: 30px;">
             <div class="card-header">
                 <span class="icon">🎯</span>
-                <h2>Arquivo em Processamento</h2>
+                <h2>Em Processamento</h2>
             </div>
             <div id="processing-content">
                 <div class="loading"><div class="spinner"></div>Verificando...</div>
@@ -216,14 +227,14 @@
                 <h2>Candidatos Para Tradução</h2>
             </div>
             <div id="candidate-content">
-                <div class="loading"><div class="spinner"></div>Procurando legendas aproveitáveis...</div>
+                <div class="loading"><div class="spinner"></div>Procurando legendas aproveitaveis...</div>
             </div>
         </div>
 
         <div class="card" style="margin-bottom: 30px;">
             <div class="card-header">
                 <span class="icon">📁</span>
-                <h2>Legendas Recentes (últimas 48h)</h2>
+                <h2>Legendas Recentes (ultimas 48h)</h2>
             </div>
             <div id="srt-content">
                 <div class="loading"><div class="spinner"></div>Carregando arquivos...</div>
@@ -264,7 +275,7 @@
 
         function renderContainers(data) {
             const grid = document.getElementById('containers-grid');
-            
+
             const whisperStatus = getStatusBadge(data.whisper.status, data.whisper.processing);
             const ollamaStatus = getStatusBadge(data.ollama.status, data.ollama.processing);
             const bazarrStatus = getStatusBadge(data.bazarr.status, 'idle');
@@ -281,12 +292,12 @@
                         <span class="metric-value">${data.whisper.stats.cpu}</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Memória</span>
+                        <span class="metric-label">Memoria</span>
                         <span class="metric-value">${data.whisper.stats.mem_usage}</span>
                     </div>
                     <div class="metric">
                         <span class="metric-label">Status</span>
-                        <span class="metric-value">${data.whisper.processing === 'processing' ? '🔄 Transcrevendo áudio...' : '⏳ Ocioso'}</span>
+                        <span class="metric-value">${data.whisper.processing === 'processing' ? '🔄 Transcrevendo audio...' : '⏳ Ocioso'}</span>
                     </div>
                 </div>
 
@@ -301,7 +312,7 @@
                         <span class="metric-value">${data.ollama.stats.cpu}</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Memória</span>
+                        <span class="metric-label">Memoria</span>
                         <span class="metric-value">${data.ollama.stats.mem_usage}</span>
                     </div>
                     <div class="metric">
@@ -325,7 +336,7 @@
                         <span class="metric-value">${data.bazarr.stats.cpu}</span>
                     </div>
                     <div class="metric">
-                        <span class="metric-label">Memória</span>
+                        <span class="metric-label">Memoria</span>
                         <span class="metric-value">${data.bazarr.stats.mem_usage}</span>
                     </div>
                     <div style="margin-top: 10px;">
@@ -340,36 +351,22 @@
 
         function renderProcessing(processing) {
             const container = document.getElementById('processing-content');
-            
+
             if (!processing) {
                 container.innerHTML = '<p style="color: #64748b; text-align: center;">Nenhum arquivo em processamento no momento</p>';
                 return;
             }
-            
+
             let html = '';
-            
             if (processing.whisper) {
-                html += `
-                    <div class="metric">
-                        <span class="metric-label">🎙️ Whisper</span>
-                        <span class="metric-value">${processing.whisper}</span>
-                    </div>
-                `;
+                html += `<div class="metric"><span class="metric-label">🎙️ Whisper</span><span class="metric-value">${processing.whisper}</span></div>`;
             }
-            
             if (processing.ollama) {
-                html += `
-                    <div class="metric">
-                        <span class="metric-label">🧠 Ollama</span>
-                        <span class="metric-value">${processing.ollama}</span>
-                    </div>
-                `;
+                html += `<div class="metric"><span class="metric-label">🧠 Ollama</span><span class="metric-value">${processing.ollama}</span></div>`;
             }
-            
             if (!processing.whisper && !processing.ollama) {
                 html = '<p style="color: #64748b; text-align: center;">Nenhum arquivo em processamento no momento</p>';
             }
-            
             container.innerHTML = html;
         }
 
@@ -385,10 +382,10 @@
             const current = translation.current;
             const pending = translation.pending || [];
             const completed = translation.completed || [];
-            
+
             let html = '<table class="srt-table">';
-            html += '<thead><tr><th>Arquivo</th><th>Status</th><th>Tempo</th><th>Ação</th></tr></thead><tbody>';
-            
+            html += '<thead><tr><th>Arquivo</th><th>Status</th><th>Tempo</th><th>Acao</th></tr></thead><tbody>';
+
             if (current) {
                 html += `<tr>
                     <td class="filename" title="${escapeHtml(current.source)}">${escapeHtml(filenameFromJob(current))}</td>
@@ -406,19 +403,19 @@
                     <td><button class="btn btn-primary" data-translate-job="${encodeJob(job)}">Traduzir agora</button></td>
                 </tr>`;
             });
-            
+
             if (!current && pending.length === 0) {
                 html += `<tr><td colspan="4" style="text-align:center;color:#64748b;">Fila vazia</td></tr>`;
             }
-            
+
             html += '</tbody></table>';
-            
+
             if (completed.length > 0) {
                 html += '<div style="margin-top: 15px; color: #64748b; font-size: 0.8rem;">';
-                html += `Últimos concluídos: ${completed.slice(-3).map(c => escapeHtml(filenameFromJob(c))).join(', ')}`;
+                html += `Ultimos concluidos: ${completed.slice(-3).map(c => escapeHtml(filenameFromJob(c))).join(', ')}`;
                 html += '</div>';
             }
-            
+
             container.innerHTML = html;
         }
 
@@ -433,7 +430,7 @@
             }
 
             if (!candidates.length) {
-                container.innerHTML = '<p style="color: #64748b; text-align: center;">Nenhum candidato pendente. PT-BR já existe ou o Bazarr ainda não gerou/encontrou legenda aproveitável.</p>';
+                container.innerHTML = '<p style="color: #64748b; text-align: center;">Nenhum candidato pendente. PT-BR ja existe ou o Bazarr ainda nao gerou/encontrou legenda aproveitavel.</p>';
                 return;
             }
 
@@ -449,7 +446,7 @@
 
             container.innerHTML = `
                 <table class="srt-table">
-                    <thead><tr><th>Origem</th><th>Idioma</th><th>Arquivo</th><th>Motivo</th><th>Ação</th></tr></thead>
+                    <thead><tr><th>Origem</th><th>Idioma</th><th>Arquivo</th><th>Motivo</th><th>Acao</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             `;
@@ -457,7 +454,7 @@
 
         function renderSrtFiles(files) {
             const container = document.getElementById('srt-content');
-            
+
             if (!files || files.length === 0) {
                 container.innerHTML = '<p style="color: #64748b; text-align: center;">Nenhuma legenda gerada recentemente</p>';
                 return;
@@ -475,15 +472,7 @@
 
             container.innerHTML = `
                 <table class="srt-table">
-                    <thead>
-                        <tr>
-                            <th>Idioma</th>
-                            <th>Arquivo</th>
-                            <th>Tamanho</th>
-                            <th>Tempo</th>
-                            <th>Data</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>Idioma</th><th>Arquivo</th><th>Tamanho</th><th>Tempo</th><th>Data</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             `;
@@ -492,7 +481,6 @@
         async function cancelTranslation() {
             try {
                 await fetch('/api/translate/cancel', {method: 'POST'});
-                fetchStatus();
             } catch (e) {
                 console.error('Cancel failed:', e);
             }
@@ -505,28 +493,29 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(job ? {job} : {path})
                 });
-                fetchStatus();
             } catch (e) {
                 console.error('Trigger failed:', e);
             }
+        }
+
+        function renderAll(data) {
+            renderContainers(data);
+            renderProcessing(data.current_processing);
+            renderTranslationQueue(data);
+            renderCandidates(data.candidates);
+            renderSrtFiles(data.srt_files);
+            document.getElementById('last-update').innerHTML =
+                '<span class="ws-indicator ws-live" id="ws-dot"></span>Ultima atualizacao: ' + data.timestamp;
         }
 
         async function fetchStatus() {
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
-                
-                renderContainers(data);
-                renderProcessing(data.current_processing);
-                renderTranslationQueue(data);
-                renderCandidates(data.candidates);
-                renderSrtFiles(data.srt_files);
-                
-                document.getElementById('last-update').textContent = 
-                    `Última atualização: ${data.timestamp}`;
+                renderAll(data);
             } catch (error) {
                 console.error('Error fetching status:', error);
-                document.getElementById('last-update').textContent = 
+                document.getElementById('last-update').textContent =
                     'Erro ao atualizar - tentando novamente...';
                 ['containers-grid', 'processing-content', 'translate-queue-content', 'candidate-content', 'srt-content'].forEach(id => {
                     const element = document.getElementById(id);
@@ -535,6 +524,38 @@
                     }
                 });
             }
+        }
+
+        // WebSocket connection for live updates
+        function connectWebSocket() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = protocol + '//' + location.host + '/ws';
+            const ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                document.getElementById('ws-dot').className = 'ws-indicator ws-live';
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.ping) return;
+                    renderAll(data);
+                } catch (e) {
+                    console.error('WS parse error:', e);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected, falling back to polling');
+                document.getElementById('ws-dot').className = 'ws-indicator ws-dead';
+                setTimeout(connectWebSocket, 5000);
+            };
+
+            ws.onerror = () => {
+                ws.close();
+            };
         }
 
         document.addEventListener('click', event => {
@@ -548,11 +569,9 @@
             }
         });
 
-        // Initial load
         fetchStatus();
-        
-        // Auto refresh
-        setInterval(fetchStatus, REFRESH_INTERVAL);
+        connectWebSocket();
+        setInterval(fetchStatus, REFRESH_INTERVAL * 2);
     </script>
 </body>
 </html>
