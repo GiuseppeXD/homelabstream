@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py config.py db.py jobs.py scanner.py watcher.py translate.py extractor.py docker_utils.py /app/
+COPY main.py config.py db.py jobs.py scanner.py watcher.py translate.py extractor.py docker_utils.py transcription.py /app/
 COPY templates/ /app/templates/
 COPY static/ /app/static/
 

@@ -158,6 +158,8 @@ services:
   whisper-asr:
     image: onerahmet/openai-whisper-asr-webservice@sha256:03b402335881cdab2e4939b24620809df8d6ceec3bf2712217d41c8761a0f5d4 # v1.9.1
     container_name: whisper-asr
+    profiles:
+      - transcription
     restart: unless-stopped
     environment:
       - TZ=${TZ}
@@ -209,7 +211,7 @@ services:
     ports:
       - "8990:8989"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/run/docker.sock:/var/run/docker.sock:rw
       - ./media:/media:rw
       - ./config/bazarr/log:/bazarr-logs:ro
     environment:

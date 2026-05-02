@@ -223,6 +223,17 @@
 
         <div class="card" style="margin-bottom: 30px;">
             <div class="card-header">
+                <span class="icon">🔍</span>
+                <h2>Buscar Na Biblioteca</h2>
+            </div>
+            <div id="search-content">
+                <input type="text" id="search-input" placeholder="Digite ao menos 2 caracteres..." style="width:100%;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:0.95rem;outline:none;">
+                <div id="search-results" style="margin-top:12px;"></div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 30px;">
+            <div class="card-header">
                 <span class="icon">🧩</span>
                 <h2>Candidatos Para Tradução</h2>
             </div>
@@ -280,6 +291,19 @@
             const ollamaStatus = getStatusBadge(data.ollama.status, data.ollama.processing);
             const bazarrStatus = getStatusBadge(data.bazarr.status, 'idle');
 
+            const ts = data.whisper.transcription || {};
+            const tsCurrent = ts.current;
+            let whisperExtra = '';
+            if (tsCurrent) {
+                const label = tsCurrent.status === 'starting' ? 'Iniciando container...' :
+                    tsCurrent.status === 'waiting_api' ? 'Aguardando API...' :
+                    tsCurrent.status === 'transcribing' ? 'Transcrevendo...' :
+                    tsCurrent.status === 'saving' ? 'Salvando...' :
+                    tsCurrent.status === 'error' ? `Erro: ${escapeHtml(tsCurrent.error || '')}` :
+                    tsCurrent.status === 'completed' ? 'Concluido' : tsCurrent.status;
+                whisperExtra = `<div class="metric"><span class="metric-label">Job</span><span class="metric-value">${escapeHtml(filenameFromJob({source: tsCurrent.video_path}))} - ${label}</span></div>`;
+            }
+
             grid.innerHTML = `
                 <div class="card">
                     <div class="card-header">
@@ -299,6 +323,7 @@
                         <span class="metric-label">Status</span>
                         <span class="metric-value">${data.whisper.processing === 'processing' ? '🔄 Transcrevendo audio...' : '⏳ Ocioso'}</span>
                     </div>
+                    ${whisperExtra}
                 </div>
 
                 <div class="card">
@@ -387,11 +412,17 @@
             html += '<thead><tr><th>Arquivo</th><th>Status</th><th>Tempo</th><th>Acao</th></tr></thead><tbody>';
 
             if (current) {
+                const isCancelling = current.status === 'cancelling';
+                const statusIcon = isCancelling ? '⏹️' : '🔄';
+                const statusText = isCancelling ? 'Cancelando...' : 'Rodando';
+                const cancelBtn = isCancelling
+                    ? '<span class="pill" style="background:#854d0e;color:#fbbf24;">Cancelando...</span>'
+                    : `<button class="btn btn-danger" onclick="cancelTranslation()">Cancelar</button>`;
                 html += `<tr>
                     <td class="filename" title="${escapeHtml(current.source)}">${escapeHtml(filenameFromJob(current))}</td>
-                    <td>🔄 Rodando <span class="pill">${escapeHtml(current.language || 'unknown')}</span></td>
+                    <td>${statusIcon} ${statusText} <span class="pill">${escapeHtml(current.language || 'unknown')}</span></td>
                     <td>${formatTime(current.elapsed)}</td>
-                    <td><button class="btn btn-danger" onclick="cancelTranslation()">Cancelar</button></td>
+                    <td>${cancelBtn}</td>
                 </tr>`;
             }
 
@@ -467,12 +498,13 @@
                     <td>${escapeHtml(f.size)}</td>
                     <td>${escapeHtml(f.ago)}</td>
                     <td style="color: #64748b; font-size: 0.8rem;">${escapeHtml(f.timestamp)}</td>
+                    <td><a href="/subtitles/view?path=${encodeURIComponent(f.relpath || f.path)}" class="btn btn-primary" target="_blank">Abrir</a></td>
                 </tr>
             `).join('');
 
             container.innerHTML = `
                 <table class="srt-table">
-                    <thead><tr><th>Idioma</th><th>Arquivo</th><th>Tamanho</th><th>Tempo</th><th>Data</th></tr></thead>
+                    <thead><tr><th>Idioma</th><th>Arquivo</th><th>Tamanho</th><th>Tempo</th><th>Data</th><th>Acao</th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             `;
@@ -481,6 +513,7 @@
         async function cancelTranslation() {
             try {
                 await fetch('/api/translate/cancel', {method: 'POST'});
+                showToast('Cancelamento solicitado - aguardando fim do lote atual');
             } catch (e) {
                 console.error('Cancel failed:', e);
             }
@@ -488,14 +521,40 @@
 
         async function triggerTranslation(path, job) {
             try {
-                await fetch('/api/translate/trigger', {
+                const resp = await fetch('/api/translate/trigger', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(job ? {job} : {path})
                 });
+                const data = await resp.json();
+                if (data.status === 'queued') {
+                    const name = filenameFromJob(job || {path});
+                    showToast(`"${name}" enfileirado para traducao`);
+                } else if (data.status !== 'queued') {
+                    const name = filenameFromJob(job || {path});
+                    showToast(`"${name}" ja traduzido ou ja na fila`, 'warn');
+                }
             } catch (e) {
                 console.error('Trigger failed:', e);
             }
+        }
+
+        function showToast(msg, type) {
+            const existing = document.getElementById('toast');
+            if (existing) existing.remove();
+            const div = document.createElement('div');
+            div.id = 'toast';
+            div.textContent = msg;
+            const bg = type === 'warn' ? '#854d0e' : '#166534';
+            Object.assign(div.style, {
+                position: 'fixed', bottom: '20px', right: '20px',
+                background: bg, color: '#fff', padding: '12px 20px',
+                borderRadius: '8px', fontFamily: 'sans-serif', fontSize: '0.9rem',
+                zIndex: '9999', boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                transition: 'opacity 0.3s',
+            });
+            document.body.appendChild(div);
+            setTimeout(() => { div.style.opacity = '0'; setTimeout(() => div.remove(), 300); }, 3000);
         }
 
         function renderAll(data) {
@@ -566,6 +625,149 @@
                 triggerTranslation(null, job);
             } catch (error) {
                 console.error('Invalid translate job:', error);
+            }
+        });
+
+        // Search
+        let searchTimeout = null;
+        const searchInput = document.getElementById('search-input');
+        const searchResults = document.getElementById('search-results');
+
+        async function doSearch(query) {
+            if (!query || query.length < 2) {
+                searchResults.innerHTML = '<p style="color:#64748b;text-align:center;font-size:0.9rem;">Digite ao menos 2 caracteres</p>';
+                return;
+            }
+            searchResults.innerHTML = '<p style="color:#64748b;text-align:center;"><span class="spinner" style="display:inline-block;"></span> Buscando...</p>';
+            try {
+                const resp = await fetch('/api/search?q=' + encodeURIComponent(query) + '&limit=50');
+                const data = await resp.json();
+                const results = data.results || [];
+                if (!results.length) {
+                    searchResults.innerHTML = '<p style="color:#64748b;text-align:center;">Nenhum resultado encontrado</p>';
+                    return;
+                }
+                let html = '<table class="srt-table"><thead><tr><th>Tipo</th><th>Arquivo</th><th>Idioma</th><th>Acoes</th></tr></thead><tbody>';
+                results.forEach(r => {
+                    const icon = r.kind === 'video' ? '🎬' : '📄';
+                    const lang = r.lang || (r.kind === 'video' ? (r.has_ptbr ? 'PT-BR ✓' : r.has_en ? 'EN ✓' : '-') : '-');
+                    let actions = '';
+                    if (r.kind === 'video') {
+                        actions += `<button class="btn btn-primary" data-details-path="${escapeHtml(r.relpath)}">Detalhes</button> `;
+                        if (!r.has_en) {
+                            actions += `<button class="btn btn-primary" data-whisper-path="${escapeHtml(r.relpath)}">Gerar EN via Whisper</button> `;
+                        }
+                    }
+                    if (r.kind === 'subtitle') {
+                        if (r.lang === 'pt-BR') {
+                            actions += `<span class="pill">PT-BR OK</span> `;
+                        } else if (r.output_exists) {
+                            actions += `<span class="pill" style="background:#166534;color:#4ade80;">Ja traduzido</span> `;
+                        } else {
+                            const job = {source: r.path, source_type: 'external', filename: r.filename, language: r.lang, output: r.output || ''};
+                            actions += `<button class="btn btn-primary" data-translate-job="${encodeURIComponent(JSON.stringify(job))}">Traduzir</button> `;
+                        }
+                    }
+                    if (r.kind === 'subtitle') {
+                        actions += `<a href="/subtitles/view?path=${encodeURIComponent(r.relpath)}" class="btn btn-primary" target="_blank">Abrir</a>`;
+                    }
+                    html += `<tr data-relpath="${escapeHtml(r.relpath)}"><td>${icon}</td><td class="filename" title="${escapeHtml(r.path)}">${escapeHtml(r.filename)}</td><td><span class="pill">${escapeHtml(lang)}</span></td><td>${actions}</td></tr>`;
+                });
+                html += '</tbody></table>';
+                html += `<p style="color:#64748b;font-size:0.8rem;margin-top:8px;">${results.length} resultado(s)</p>`;
+                searchResults.innerHTML = html;
+            } catch (e) {
+                console.error('Search error:', e);
+                searchResults.innerHTML = '<div class="error-box">Erro ao buscar</div>';
+            }
+        }
+
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => doSearch(searchInput.value.trim()), 300);
+        });
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                clearTimeout(searchTimeout);
+                doSearch(searchInput.value.trim());
+            }
+        });
+
+        // Whisper trigger
+        document.addEventListener('click', async (event) => {
+            const btn = event.target.closest('[data-whisper-path]');
+            if (!btn) return;
+            const relpath = btn.dataset.whisperPath;
+            btn.disabled = true;
+            btn.textContent = 'Iniciando...';
+            try {
+                const resp = await fetch('/api/whisper/trigger', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: relpath}),
+                });
+                const data = await resp.json();
+                if (data.status !== 'started') {
+                    alert('Erro: ' + (data.message || data.status));
+                }
+            } catch (e) {
+                alert('Erro ao iniciar transcricao');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Gerar EN via Whisper';
+            }
+        });
+
+        // Video details expand
+        document.addEventListener('click', async (event) => {
+            const btn = event.target.closest('[data-details-path]');
+            if (!btn) return;
+            const relpath = btn.dataset.detailsPath;
+            const row = btn.closest('tr');
+            const next = row.nextElementSibling;
+            if (next && next.classList.contains('details-row')) {
+                next.remove();
+                return;
+            }
+            if (next && next.classList.contains('details-row')) return;
+            const detailsRow = document.createElement('tr');
+            detailsRow.className = 'details-row';
+            detailsRow.innerHTML = `<td colspan="4" style="padding:12px;background:#0f172a;"><div class="loading"><div class="spinner"></div>Carregando detalhes...</div></td>`;
+            row.after(detailsRow);
+            try {
+                const resp = await fetch('/api/media/details?path=' + encodeURIComponent(relpath));
+                const d = await resp.json();
+                let html = '<div style="font-size:0.9rem;">';
+                html += '<p style="color:#38bdf8;margin-bottom:8px;">Acoes:</p>';
+                if (!d.output_en || !d.external_subtitles?.some(s => s.lang === 'en')) {
+                    html += `<button class="btn btn-primary" data-whisper-path="${escapeHtml(relpath)}" style="margin-bottom:10px;">🎙️ Gerar EN via Whisper</button> `;
+                }
+                html += '<p style="color:#38bdf8;margin-bottom:8px;">Legendas externas:</p>';
+                if (d.external_subtitles && d.external_subtitles.length) {
+                    d.external_subtitles.forEach(s => {
+                        html += `<div style="margin:4px 0;"><span class="pill">${escapeHtml(s.lang)}</span> ${escapeHtml(s.path.split('/').pop())}`;
+                        if (s.lang !== 'pt-BR') {
+                            const dtJob = {source: s.path, source_type: 'external', filename: s.path.split('/').pop(), language: s.lang, output: d.output_ptbr || ''};
+                            html += ` <button class="btn btn-primary" data-translate-job="${encodeURIComponent(JSON.stringify(dtJob))}">Traduzir</button>`;
+                        }
+                        html += ` <a href="/subtitles/view?path=${escapeHtml(s.path.replace('/media/', ''))}" class="btn btn-primary" target="_blank">Abrir</a>`;
+                        html += '</div>';
+                    });
+                } else {
+                    html += '<p style="color:#64748b;">Nenhuma</p>';
+                }
+                html += '<p style="color:#38bdf8;margin:12px 0 8px;">Streams embutidos:</p>';
+                if (d.embedded_subtitles && d.embedded_subtitles.length) {
+                    d.embedded_subtitles.forEach(s => {
+                        html += `<div style="margin:4px 0;"><span class="pill">${escapeHtml(s.language)}</span> idx=${s.index} ${escapeHtml(s.title)}</div>`;
+                    });
+                } else {
+                    html += '<p style="color:#64748b;">Nenhum</p>';
+                }
+                html += '</div>';
+                detailsRow.innerHTML = `<td colspan="4" style="padding:12px;background:#0f172a;border-bottom:1px solid #334155;">${html}</td>`;
+            } catch (e) {
+                detailsRow.innerHTML = `<td colspan="4" style="padding:12px;background:#0f172a;"><div class="error-box">Erro ao carregar detalhes</div></td>`;
             }
         });
 

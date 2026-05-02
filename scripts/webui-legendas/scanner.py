@@ -211,6 +211,7 @@ def get_recent_srt():
                 flag = "BR" if is_ptbr_lang(lang) else "US" if is_english_lang(lang) else "  "
                 files.append({
                     "path": path,
+                    "relpath": os.path.relpath(path, MEDIA_DIR),
                     "filename": filename,
                     "lang": lang,
                     "flag": flag,
@@ -220,6 +221,80 @@ def get_recent_srt():
                 })
     files.sort(key=lambda item: item["timestamp"], reverse=True)
     return files[:20]
+
+
+def get_video_details(video_path):
+    if not os.path.isfile(video_path) or not is_video(video_path):
+        return None
+    ext_subs = []
+    for sub_path in external_subtitles_for_video(video_path):
+        lang = lang_from_subtitle_name(sub_path)
+        ext_subs.append({"path": sub_path, "lang": lang})
+    embedded = []
+    for stream in ffprobe_subtitles(video_path):
+        tags = stream.get("tags") or {}
+        lang = normalize_lang(tags.get("language", "unknown"))
+        embedded.append({
+            "index": stream.get("index"),
+            "language": lang,
+            "codec": stream.get("codec_name", "unknown"),
+            "title": tags.get("title", ""),
+        })
+    return {
+        "video_path": video_path,
+        "filename": Path(video_path).name,
+        "external_subtitles": ext_subs,
+        "embedded_subtitles": embedded,
+        "output_ptbr": video_output_path(video_path),
+        "output_en": str(Path(video_path).with_suffix("")) + ".en.srt",
+    }
+
+
+def search_media(query, limit=50):
+    if not query or len(query.strip()) < 2:
+        return []
+    q = query.lower().strip()
+    results = []
+    seen = set()
+    for root in media_roots():
+        if not os.path.exists(root):
+            continue
+        for dirpath, _, filenames in os.walk(root):
+            for filename in filenames:
+                if q not in filename.lower():
+                    continue
+                full = os.path.join(dirpath, filename)
+                if full in seen:
+                    continue
+                seen.add(full)
+                rel = os.path.relpath(full, MEDIA_DIR)
+                ext = Path(filename).suffix.lower()
+                if is_video(full):
+                    kind = "video"
+                elif is_subtitle(full):
+                    kind = "subtitle"
+                else:
+                    continue
+                entry = {
+                    "path": full,
+                    "relpath": rel,
+                    "filename": filename,
+                    "kind": kind,
+                }
+                if kind == "subtitle":
+                    entry["lang"] = lang_from_subtitle_name(full)
+                    entry["output"] = subtitle_output_path(full)
+                    entry["output_exists"] = os.path.exists(entry["output"])
+                if kind == "video":
+                    entry["has_ptbr"] = os.path.exists(video_output_path(full))
+                    entry["has_en"] = any(
+                        is_english_lang(lang_from_subtitle_name(p))
+                        for p in external_subtitles_for_video(full)
+                    )
+                results.append(entry)
+                if len(results) >= limit:
+                    return results
+    return results
 
 
 def scanner_loop(add_job_func):

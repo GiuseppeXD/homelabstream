@@ -14,11 +14,11 @@ Stack Docker Compose para Jellyfin, downloads, automacao de catalogo e pipeline 
 | Bazarr | `6767` | Busca, sincronizacao e geracao de legendas |
 | Jellyseerr | `5055` | Pedidos de filmes/series integrados ao Jellyfin |
 | FlareSolverr | `8191` | Resolver desafios Cloudflare/JS de indexadores |
-| Whisper-ASR | `9000` | API local de transcricao de audio para legenda |
+| Whisper-ASR | `9000` | API local de transcricao de audio para legenda, on-demand via profile `transcription` |
 | Ollama | `11434` | LLM local usado para traduzir legendas |
 | legendas-webui | `8990` | Dashboard e fila de traducao EN -> PT-BR |
 
-Todos os servicos ficam na rede bridge `media_net`. Use os nomes dos servicos para comunicacao interna, por exemplo `http://qbittorrent:8080`, `http://radarr:7878`, `http://sonarr:8989`, `http://ollama:11434` e `http://whisper-asr:9000`.
+Todos os servicos ficam na rede bridge `media_net`. Use os nomes dos servicos para comunicacao interna, por exemplo `http://qbittorrent:8080`, `http://radarr:7878`, `http://sonarr:8989`, `http://ollama:11434` e `http://whisper-asr:9000`. O `whisper-asr` fica fora da subida padrao para nao manter o modelo carregado em RAM quando nao houver transcricao.
 
 ## Estrutura
 
@@ -116,6 +116,24 @@ Subir ou recriar tudo:
 docker compose up -d --build
 ```
 
+O `whisper-asr` nao sobe nesse comando porque fica no profile `transcription`. Para habilita-lo sob demanda antes de gerar legendas por audio:
+
+```bash
+docker compose up -d whisper-asr
+```
+
+Depois que a transcricao terminar, pare somente ele para liberar RAM:
+
+```bash
+docker compose stop whisper-asr
+```
+
+Se preferir manter Whisper sempre ativo, suba a stack com o profile:
+
+```bash
+docker compose --profile transcription up -d --build
+```
+
 Subir somente a Web UI apos alterar `scripts/webui-legendas/`:
 
 ```bash
@@ -136,6 +154,8 @@ docker compose logs -f legendas-webui
 docker compose logs -f whisper-asr
 docker compose logs -f ollama
 ```
+
+Os logs do `whisper-asr` so existirao quando ele tiver sido iniciado via `docker compose up -d whisper-asr` ou pelo profile `transcription`.
 
 Atualizar imagens pinadas no Compose exige editar os digests em `docker-compose.yml`. Para baixar as imagens configuradas e recriar containers:
 
@@ -188,7 +208,8 @@ docker compose down
 - Whisper-ASR: `http://<host>:9000`.
 - Ollama: `http://<host>:11434`.
 - Configure Bazarr para trabalhar sobre `/media/movies` e `/media/series`.
-- O Whisper-ASR usa `ASR_ENGINE=faster_whisper` e `ASR_MODEL=${WHISPER_MODEL:-large-v3}`.
+- O Whisper-ASR usa `ASR_ENGINE=faster_whisper` e `ASR_MODEL=${WHISPER_MODEL:-large-v3}`, mas fica em profile on-demand `transcription` para evitar RAM alta em idle.
+- Antes de usar geracao de legenda por audio no Bazarr, inicie o servico com `docker compose up -d whisper-asr`; ao terminar, rode `docker compose stop whisper-asr`.
 - O Ollama usa `TRANSLATE_MODEL` para traducoes EN -> PT-BR, por padrao `qwen2.5:7b`.
 
 ## Pipeline De Legendas

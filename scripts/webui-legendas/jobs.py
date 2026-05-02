@@ -77,6 +77,10 @@ class JobManager:
 
     def cancel_current(self):
         self._cancelled.set()
+        with self._lock:
+            if self._current:
+                self._current["status"] = "cancelling"
+        self._notify()
 
     def _worker(self):
         while not self._stop_event.is_set():
@@ -97,7 +101,7 @@ class JobManager:
             self._notify()
 
             try:
-                success = self._process_job(job)
+                success, err_msg = self._process_job(job)
                 if success and job_id:
                     update_job_status(job_id, "completed")
                     mark_translated(
@@ -107,7 +111,7 @@ class JobManager:
                         job.get("language", "unknown"),
                     )
                 elif job_id:
-                    update_job_status(job_id, "failed", "Translation failed")
+                    update_job_status(job_id, "failed", err_msg or "Translation failed")
             except Exception as exc:
                 print(f"Translation failed for {job.get('source')}: {exc}")
                 if job_id:
@@ -124,13 +128,16 @@ class JobManager:
     def _process_job(self, job):
         source_srt = prepare_subtitle_source(job)
         if not source_srt:
-            return False
-        return translate_srt(
+            return False, "Falha ao extrair/converter legenda de origem"
+        ok = translate_srt(
             source_srt,
             job["output"],
             job.get("language", "unknown"),
             cancel_check=self._cancelled.is_set,
         )
+        if not ok:
+            return False, "SRT vazio ou formato invalido"
+        return True, None
 
     def get_status(self):
         with self._lock:

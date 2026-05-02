@@ -71,6 +71,7 @@ def translate_srt(source_path, output_path, source_language, cancel_check=None):
 
     entries = parse_srt_entries(content)
     if not entries:
+        print(f"translate_srt: no valid SRT entries in {source_path} (first 200 bytes: {content[:200].strip()})")
         return False
 
     source_label = detect_source_label(source_language)
