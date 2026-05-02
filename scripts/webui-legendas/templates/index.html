@@ -739,7 +739,7 @@
                 const d = await resp.json();
                 let html = '<div style="font-size:0.9rem;">';
                 html += '<p style="color:#38bdf8;margin-bottom:8px;">Acoes:</p>';
-                if (!d.output_en || !d.external_subtitles?.some(s => s.lang === 'en')) {
+                if (!d.external_subtitles?.some(s => s.lang === 'en')) {
                     html += `<button class="btn btn-primary" data-whisper-path="${escapeHtml(relpath)}" style="margin-bottom:10px;">🎙️ Gerar EN via Whisper</button> `;
                 }
                 html += '<p style="color:#38bdf8;margin-bottom:8px;">Legendas externas:</p>';

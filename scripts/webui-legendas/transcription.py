@@ -149,6 +149,16 @@ def translate_srt_via_ollama(srt_path, source_lang, target_lang="English"):
     return True
 
 
+def _looks_like_srt(text):
+    lines = text.strip().split("\n")
+    return len(lines) >= 3 and lines[0].strip().isdigit() and "-->" in lines[1]
+
+
+def _raw_text_to_srt(text):
+    lines = text.strip().split("\n")
+    return "1\n00:00:00,000 --> 00:00:00,000\n" + "\n".join(lines)
+
+
 def transcribe(video_path):
     url = f"{WHISPER_URL}/asr"
     try:
@@ -163,18 +173,30 @@ def transcribe(video_path):
         raw = result.stdout.strip()
         if not raw:
             return None, None, "Resposta vazia da API do Whisper"
+
+        # Try JSON
         try:
             payload = json.loads(raw)
+            if isinstance(payload, dict):
+                if "error" in payload:
+                    return None, None, str(payload.get("error"))
+                lang = payload.get("language", "unknown")
+                segments = payload.get("segments", [])
+                if segments:
+                    return segments_to_srt(segments), lang, None
+                text = payload.get("text", "").strip()
+                if text:
+                    return _raw_text_to_srt(text), lang, None
+                return None, None, "Resposta JSON vazia do Whisper"
         except json.JSONDecodeError:
-            return None, None, f"Resposta nao-JSON do Whisper: {raw[:200]}"
-        if "error" in payload:
-            return None, None, str(payload.get("error", raw[:200]))
-        lang = payload.get("language", "unknown")
-        segments = payload.get("segments", [])
-        if not segments:
-            return None, None, "Nenhum segmento na resposta do Whisper"
-        srt_content = segments_to_srt(segments)
-        return srt_content, lang, None
+            pass
+
+        # Try SRT format
+        if _looks_like_srt(raw):
+            return raw, "unknown", None
+
+        # Raw text fallback
+        return _raw_text_to_srt(raw), "unknown", None
     except Exception as exc:
         return None, None, str(exc)
 
