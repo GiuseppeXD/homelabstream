@@ -163,7 +163,7 @@ services:
     restart: unless-stopped
     environment:
       - TZ=${TZ}
-      - ASR_ENGINE=faster_whisper
+      - ASR_ENGINE=${WHISPER_ENGINE:-whisper}
       - ASR_MODEL=${WHISPER_MODEL:-large-v3}
       - ASR_DEVICE=${WHISPER_DEVICE:-cpu}
       - OMP_NUM_THREADS=${WHISPER_CPU_THREADS:-12}
