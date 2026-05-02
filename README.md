@@ -208,7 +208,7 @@ docker compose down
 - Whisper-ASR: `http://<host>:9000`.
 - Ollama: `http://<host>:11434`.
 - Configure Bazarr para trabalhar sobre `/media/movies` e `/media/series`.
-- O Whisper-ASR usa `ASR_ENGINE=whisper` (engine original, suporta `task=translate` para gerar legendas em ingles de audio em qualquer idioma) e `ASR_MODEL=${WHISPER_MODEL:-large-v3}`, mas fica em profile on-demand `transcription` para evitar RAM alta em idle.
+- O Whisper-ASR usa `ASR_ENGINE=faster_whisper` e `ASR_MODEL=${WHISPER_MODEL:-large-v3}`, mas fica em profile on-demand `transcription` para evitar RAM alta em idle. Quando o audio nao e em ingles, a transcricao e seguida de traducao automatica via Ollama para gerar o `.en.srt`.
 - Antes de usar geracao de legenda por audio no Bazarr, inicie o servico com `docker compose up -d whisper-asr`; ao terminar, rode `docker compose stop whisper-asr`.
 - O Ollama usa `TRANSLATE_MODEL` para traducoes EN -> PT-BR, por padrao `qwen2.5:7b`.
 

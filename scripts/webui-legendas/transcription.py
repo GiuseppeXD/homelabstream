@@ -1,28 +1,22 @@
+import json
 import os
 import threading
 import time
 from pathlib import Path
 
 from docker_utils import run_cmd, run_exec
-from config import MEDIA_DIR
+from config import MEDIA_DIR, OLLAMA_URL, TRANSLATE_MODEL, NUM_PREDICT, BATCH_SIZE
 
 WHISPER_CONTAINER = os.getenv("WHISPER_CONTAINER", "whisper-asr")
 WHISPER_URL = os.getenv("WHISPER_URL", "http://whisper-asr:9000")
 WHISPER_START_TIMEOUT = int(os.getenv("WHISPER_START_TIMEOUT", "180"))
 WHISPER_TRANSCRIBE_TIMEOUT = int(os.getenv("WHISPER_TRANSCRIBE_TIMEOUT", "7200"))
 
-
-_state = {
-    "current": None,
-    "history": [],
-}
+_state = {"current": None, "history": []}
 
 
 def get_state():
-    return {
-        "current": _state["current"],
-        "history": _state["history"][-10:],
-    }
+    return {"current": _state["current"], "history": _state["history"][-10:]}
 
 
 def container_running(name):
@@ -68,24 +62,121 @@ def whisper_healthy(timeout=60):
     return False
 
 
+def segments_to_srt(segments):
+    lines = []
+    for i, seg in enumerate(segments, 1):
+        start = _fmt_ts(seg.get("start", 0))
+        end = _fmt_ts(seg.get("end", 0))
+        text = seg.get("text", "").strip()
+        if not text:
+            text = " "
+        lines.append(f"{i}\n{start} --> {end}\n{text}")
+    return "\n\n".join(lines)
+
+
+def _fmt_ts(seconds):
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = seconds % 60
+    return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
+
+
+def translate_srt_via_ollama(srt_path, source_lang, target_lang="English"):
+    import httpx
+    import re
+
+    with open(srt_path, "r", encoding="utf-8-sig") as f:
+        content = f.read().replace("\r\n", "\n").replace("\r", "\n")
+
+    entries = []
+    for block in re.split(r"\n\s*\n", content.strip()):
+        lines = block.strip().split("\n")
+        if len(lines) >= 3 and lines[0].strip().isdigit():
+            entries.append({
+                "seq": lines[0].strip(),
+                "timestamp": lines[1].strip(),
+                "text": "\n".join(lines[2:]),
+            })
+
+    if not entries:
+        return False
+
+    translated = []
+    label = source_lang if source_lang != "en" else "English"
+    with httpx.Client(timeout=httpx.Timeout(600)) as client:
+        for i in range(0, len(entries), BATCH_SIZE):
+            batch = entries[i : i + BATCH_SIZE]
+            prompt_lines = [
+                f"Translate these subtitles from {label} to {target_lang}.",
+                "Keep names, honorifics, tone, and line breaks where useful.",
+                "Return ONLY numbered translated lines in the same order.",
+            ]
+            for n, entry in enumerate(batch, 1):
+                prompt_lines.append(f"{n}. {entry['text']}")
+            prompt = "\n".join(prompt_lines)
+            try:
+                resp = client.post(OLLAMA_URL, json={
+                    "model": TRANSLATE_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"num_predict": NUM_PREDICT},
+                }, timeout=600)
+                resp.raise_for_status()
+                raw = resp.json().get("response", "").strip()
+                batch_translated = []
+                for line in raw.split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    m = re.match(r"^\d+[.)]\s*(.*)", line)
+                    batch_translated.append(m.group(1) if m else line)
+                if len(batch_translated) < len(batch):
+                    batch_translated.extend(e["text"] for e in batch[len(batch_translated):])
+                elif len(batch_translated) > len(batch):
+                    batch_translated = batch_translated[:len(batch)]
+            except Exception as exc:
+                print(f"Ollama batch {i//BATCH_SIZE+1} failed: {exc}")
+                batch_translated = [e["text"] for e in batch]
+            for entry, text in zip(batch, batch_translated):
+                translated.append({**entry, "text": text})
+
+    with open(srt_path, "w", encoding="utf-8") as f:
+        for i, entry in enumerate(translated):
+            if i:
+                f.write("\n\n")
+            f.write(f"{entry['seq']}\n{entry['timestamp']}\n{entry['text']}")
+        f.write("\n")
+    return True
+
+
 def transcribe(video_path):
     url = f"{WHISPER_URL}/asr"
     try:
         result = run_exec([
             "curl", "-s", "-X", "POST",
             "-F", f"audio_file=@{video_path}",
-            "-F", "task=translate",
-            "-F", "response_format=srt",
+            "-F", "response_format=json",
             url,
         ], timeout=WHISPER_TRANSCRIBE_TIMEOUT)
         if result.returncode != 0:
-            return None, f"curl failed: {result.stderr.strip()}"
+            return None, None, f"curl failed: {result.stderr.strip()}"
         raw = result.stdout.strip()
-        if not raw or "error" in raw.lower():
-            return None, raw[:500] if raw else "Resposta vazia"
-        return raw, None
+        if not raw:
+            return None, None, "Resposta vazia da API do Whisper"
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            return None, None, f"Resposta nao-JSON do Whisper: {raw[:200]}"
+        if "error" in payload:
+            return None, None, str(payload.get("error", raw[:200]))
+        lang = payload.get("language", "unknown")
+        segments = payload.get("segments", [])
+        if not segments:
+            return None, None, "Nenhum segmento na resposta do Whisper"
+        srt_content = segments_to_srt(segments)
+        return srt_content, lang, None
     except Exception as exc:
-        return None, str(exc)
+        return None, None, str(exc)
 
 
 def trigger(video_path):
@@ -147,21 +238,38 @@ def _run(job):
             return
 
         job["status"] = "transcribing"
-        result, err = transcribe(job["video_path"])
+        srt_content, lang, err = transcribe(job["video_path"])
         if err:
             job["status"] = "error"
             job["error"] = err
             return
 
+        job["lang_detected"] = lang
+
         job["status"] = "saving"
         tmp = job["target"] + ".tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as handle:
-                handle.write(result)
+                handle.write(srt_content)
+        except OSError as exc:
+            job["status"] = "error"
+            job["error"] = f"Falha ao salvar SRT temporario: {exc}"
+            return
+
+        if lang and lang != "en":
+            job["status"] = "translating"
+            job["error"] = None
+            ok = translate_srt_via_ollama(tmp, lang, "English")
+            if not ok:
+                job["status"] = "error"
+                job["error"] = f"Falha ao traduzir de {lang} para ingles via Ollama"
+                return
+
+        try:
             os.replace(tmp, job["target"])
         except OSError as exc:
             job["status"] = "error"
-            job["error"] = f"Falha ao salvar SRT: {exc}"
+            job["error"] = f"Falha ao salvar SRT final: {exc}"
             return
 
         job["status"] = "completed"
