@@ -11,6 +11,10 @@ backup.resolv.conf
 *.tmp
 *.swp
 
+# Python cache
+__pycache__/
+*.pyc
+
 # Editor/OS artifacts
 .DS_Store
 Thumbs.db
