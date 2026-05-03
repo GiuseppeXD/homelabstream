@@ -222,7 +222,7 @@ services:
       - REFRESH_INTERVAL=15
       - TRANSLATE_MODEL=${TRANSLATE_MODEL:-gemma3:4b}
       - OLLAMA_URL=http://ollama:11434/api/generate
-      - BATCH_SIZE=40
+      - BATCH_SIZE=10
       - NUM_PREDICT=2048
       - SUBTITLE_SCAN_INTERVAL=300
       - SUBTITLE_SCAN_MIN_AGE=600

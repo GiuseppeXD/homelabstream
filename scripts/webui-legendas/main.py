@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPExcept
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from config import MEDIA_DIR, REFRESH_INTERVAL
+from config import MEDIA_DIR, REFRESH_INTERVAL, TRANSLATE_MODEL
 from db import init_db
 from scanner import (
     candidate_cache, get_recent_srt, refresh_candidates, scanner_loop,
@@ -66,6 +66,7 @@ def build_status():
             "stats": get_container_stats("ollama"),
             "processing": get_cpu_status("ollama", 50),
             "models": get_ollama_models(),
+            "translate_model": TRANSLATE_MODEL,
         },
         "bazarr": {
             "status": get_container_status("bazarr"),
