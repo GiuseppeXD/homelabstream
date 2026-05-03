@@ -297,7 +297,10 @@
             if (tsCurrent) {
                 const label = tsCurrent.status === 'starting' ? 'Iniciando container...' :
                     tsCurrent.status === 'waiting_api' ? 'Aguardando API...' :
-                    tsCurrent.status === 'transcribing' ? 'Transcrevendo...' :
+                    tsCurrent.status === 'extracting_audio' ? 'Extraindo audio local...' :
+                    tsCurrent.status === 'detecting_language' ? 'Detectando idioma do audio...' :
+                    tsCurrent.status === 'transcribing' ? 'Chamando Whisper...' :
+                    tsCurrent.status === 'translating' ? 'Traduzindo para ingles...' :
                     tsCurrent.status === 'saving' ? 'Salvando...' :
                     tsCurrent.status === 'error' ? `Erro: ${escapeHtml(tsCurrent.error || '')}` :
                     tsCurrent.status === 'completed' ? 'Concluido' : tsCurrent.status;

@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import time
+from hashlib import sha1
 from pathlib import Path
 
 from docker_utils import run_cmd, run_exec
@@ -11,6 +12,7 @@ WHISPER_CONTAINER = os.getenv("WHISPER_CONTAINER", "whisper-asr")
 WHISPER_URL = os.getenv("WHISPER_URL", "http://whisper-asr:9000")
 WHISPER_START_TIMEOUT = int(os.getenv("WHISPER_START_TIMEOUT", "180"))
 WHISPER_TRANSCRIBE_TIMEOUT = int(os.getenv("WHISPER_TRANSCRIBE_TIMEOUT", "7200"))
+TMP_DIR = Path("/tmp/legendas-webui")
 
 _state = {"current": None, "history": []}
 
@@ -81,6 +83,76 @@ def _fmt_ts(seconds):
     return f"{h:02d}:{m:02d}:{s:06.3f}".replace(".", ",")
 
 
+def _tmp_audio_path(video_path):
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    digest = sha1(video_path.encode()).hexdigest()[:12]
+    return str(TMP_DIR / f"{Path(video_path).stem}.{digest}.wav")
+
+
+def _looks_like_srt(text):
+    lines = text.strip().split("\n")
+    return len(lines) >= 3 and lines[0].strip().isdigit() and "-->" in lines[1]
+
+
+def extract_audio_wav(video_path):
+    target = _tmp_audio_path(video_path)
+    result = run_exec([
+        "ffmpeg", "-nostdin", "-y",
+        "-i", video_path,
+        "-map", "0:a:0",
+        "-vn",
+        "-ac", "1",
+        "-ar", "16000",
+        "-acodec", "pcm_s16le",
+        target,
+    ], timeout=min(WHISPER_TRANSCRIBE_TIMEOUT, 1800))
+    if result.returncode != 0:
+        return None, f"ffmpeg extract failed: {(result.stderr or '').strip()[:300]}"
+    if not os.path.exists(target) or os.path.getsize(target) == 0:
+        return None, "ffmpeg extract failed: WAV vazio"
+    return target, None
+
+
+def detect_audio_language(audio_path):
+    api_url = f"{WHISPER_URL}/detect-language?encode=false"
+    result = run_exec([
+        "curl", "-sS", "--fail-with-body", "-X", "POST",
+        "-F", f"audio_file=@{audio_path}",
+        api_url,
+    ], timeout=min(WHISPER_TRANSCRIBE_TIMEOUT, 600))
+    if result.returncode != 0:
+        return None, f"detect-language failed (exit={result.returncode}): {(result.stderr or '').strip()[:200]}"
+    raw = (result.stdout or "").strip()
+    if not raw:
+        return None, "detect-language returned empty response"
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return None, f"detect-language returned non-JSON: {raw[:200]}"
+    code = (payload.get("language_code") or "").strip().lower()
+    if not code or code == "und":
+        return None, f"detect-language returned invalid code: {raw[:200]}"
+    return code, None
+
+
+def whisper_asr(audio_path, task, language=None):
+    params = [f"task={task}", "output=srt", "encode=false"]
+    if language:
+        params.append(f"language={language}")
+    api_url = f"{WHISPER_URL}/asr?{'&'.join(params)}"
+    result = run_exec([
+        "curl", "-sS", "--fail-with-body", "-X", "POST",
+        "-F", f"audio_file=@{audio_path}",
+        api_url,
+    ], timeout=WHISPER_TRANSCRIBE_TIMEOUT)
+    if result.returncode != 0:
+        return None, f"curl failed (exit={result.returncode}): {((result.stderr or result.stdout) or '').strip()[:300]}"
+    raw = (result.stdout or "").strip()
+    if not raw:
+        return None, f"Resposta vazia (stdout={len(result.stdout)}, stderr={len(result.stderr)}, rc={result.returncode})"
+    return raw, None
+
+
 def translate_srt_via_ollama(srt_path, source_lang, target_lang="English"):
     import httpx
     import re
@@ -149,56 +221,17 @@ def translate_srt_via_ollama(srt_path, source_lang, target_lang="English"):
     return True
 
 
-def _looks_like_srt(text):
-    lines = text.strip().split("\n")
-    return len(lines) >= 3 and lines[0].strip().isdigit() and "-->" in lines[1]
-
-
 def _raw_text_to_srt(text):
     lines = text.strip().split("\n")
     return "1\n00:00:00,000 --> 00:00:00,000\n" + "\n".join(lines)
 
 
-def transcribe(video_path):
-    url = f"{WHISPER_URL}/asr"
-    try:
-        result = run_exec([
-            "curl", "-s", "-X", "POST",
-            "-F", f"audio_file=@{video_path}",
-            "-F", "response_format=json",
-            url,
-        ], timeout=WHISPER_TRANSCRIBE_TIMEOUT)
-        if result.returncode != 0:
-            return None, None, f"curl failed: {result.stderr.strip()}"
-        raw = result.stdout.strip()
-        if not raw:
-            return None, None, "Resposta vazia da API do Whisper"
-
-        # Try JSON
-        try:
-            payload = json.loads(raw)
-            if isinstance(payload, dict):
-                if "error" in payload:
-                    return None, None, str(payload.get("error"))
-                lang = payload.get("language", "unknown")
-                segments = payload.get("segments", [])
-                if segments:
-                    return segments_to_srt(segments), lang, None
-                text = payload.get("text", "").strip()
-                if text:
-                    return _raw_text_to_srt(text), lang, None
-                return None, None, "Resposta JSON vazia do Whisper"
-        except json.JSONDecodeError:
-            pass
-
-        # Try SRT format
-        if _looks_like_srt(raw):
-            return raw, "unknown", None
-
-        # Raw text fallback
-        return _raw_text_to_srt(raw), "unknown", None
-    except Exception as exc:
-        return None, None, str(exc)
+def transcribe_from_audio(audio_path, detected_lang):
+    task = "transcribe" if detected_lang == "en" else "translate"
+    raw, err = whisper_asr(audio_path, task=task, language=detected_lang)
+    if err:
+        return None, task, err
+    return raw, task, None
 
 
 def trigger(video_path):
@@ -239,6 +272,8 @@ def cancel():
 
 def _run(job):
     was_running = container_running(WHISPER_CONTAINER)
+    audio_path = None
+    tmp = job["target"] + ".tmp"
     try:
         job["status"] = "starting"
         if not container_exists(WHISPER_CONTAINER):
@@ -259,17 +294,30 @@ def _run(job):
             job["error"] = "API do Whisper nao respondeu apos iniciar"
             return
 
-        job["status"] = "transcribing"
-        srt_content, lang, err = transcribe(job["video_path"])
+        job["status"] = "extracting_audio"
+        audio_path, err = extract_audio_wav(job["video_path"])
         if err:
             job["status"] = "error"
             job["error"] = err
             return
 
-        job["lang_detected"] = lang
+        job["status"] = "detecting_language"
+        lang, detect_err = detect_audio_language(audio_path)
+        if detect_err:
+            # Fallback pragmático: tenta traducao direta com autodetect no backend.
+            lang = None
+            job["detect_warning"] = detect_err
+
+        job["lang_detected"] = lang or "unknown"
+        job["status"] = "transcribing"
+        srt_content, task, err = transcribe_from_audio(audio_path, lang)
+        job["task"] = task
+        if err:
+            job["status"] = "error"
+            job["error"] = err
+            return
 
         job["status"] = "saving"
-        tmp = job["target"] + ".tmp"
         try:
             with open(tmp, "w", encoding="utf-8") as handle:
                 handle.write(srt_content)
@@ -278,7 +326,22 @@ def _run(job):
             job["error"] = f"Falha ao salvar SRT temporario: {exc}"
             return
 
-        if lang and lang != "en":
+        if not _looks_like_srt(srt_content):
+            if lang and lang != "en":
+                with open(tmp, "w", encoding="utf-8") as handle:
+                    handle.write(_raw_text_to_srt(srt_content))
+                job["status"] = "translating"
+                job["error"] = None
+                ok = translate_srt_via_ollama(tmp, lang, "English")
+                if not ok:
+                    job["status"] = "error"
+                    job["error"] = f"Falha ao traduzir de {lang} para ingles via Ollama"
+                    return
+            else:
+                with open(tmp, "w", encoding="utf-8") as handle:
+                    handle.write(_raw_text_to_srt(srt_content))
+
+        if lang and lang != "en" and _looks_like_srt(srt_content) and task == "transcribe":
             job["status"] = "translating"
             job["error"] = None
             ok = translate_srt_via_ollama(tmp, lang, "English")
@@ -299,6 +362,16 @@ def _run(job):
         job["status"] = "error"
         job["error"] = str(exc)
     finally:
+        if audio_path and os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+            except OSError:
+                pass
+        if job.get("status") == "error" and os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
         _finish(job, was_running)
 
 
