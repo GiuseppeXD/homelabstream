@@ -10,10 +10,13 @@ services:
     environment:
       - TZ=${TZ}
       - LOG_LEVEL=info
-    ports:
-      - "${FLARESOLVERR_PORT}:8191"
+    labels:
+      dashboard.name: "FlareSolverr"
+      dashboard.description: "Proxy para resolver desafios Cloudflare"
+      dashboard.url: "https://flaresolverr.home.arpa"
     networks:
       - media_net
+      - edge-proxy
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent@sha256:3679a75dd2304b695525d83a4ff14c458708b5da4a7ce53044240932139590e1 # 5.1.4
     container_name: qbittorrent
@@ -27,8 +30,11 @@ services:
       - PGID=${PGID}
       - TZ=${TZ}
       - WEBUI_PORT=${QBITTORRENT_WEBUI_PORT}
+    labels:
+      dashboard.name: "qBittorrent"
+      dashboard.description: "Cliente BitTorrent"
+      dashboard.url: "https://qbittorrent.home.arpa"
     ports:
-      - "${QBITTORRENT_WEBUI_PORT}:8080"
       - "6881:6881/tcp"
       - "6881:6881/udp"
     volumes:
@@ -36,6 +42,7 @@ services:
       - ./media/downloads:/downloads
     networks:
       - media_net
+      - edge-proxy
   radarr:
     image: lscr.io/linuxserver/radarr@sha256:cd70546fc97169788530386b42cf47ba1b16d091b4dc2264cd54099dd13c6f7f # 6.1.1.10360-ls298
     container_name: radarr
@@ -48,13 +55,16 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-    ports:
-      - "${RADARR_PORT}:7878"
+    labels:
+      dashboard.name: "Radarr"
+      dashboard.description: "Gerenciador de filmes"
+      dashboard.url: "https://radarr.home.arpa"
     volumes:
       - ./config/radarr:/config
       - ./media:/media
     networks:
       - media_net
+      - edge-proxy
   sonarr:
     image: lscr.io/linuxserver/sonarr@sha256:76414c033f290d3c9f1f9dfad71150abe71d92592369a3377a5903d579e6e2b2 # 4.0.17.2952-ls305
     container_name: sonarr
@@ -67,13 +77,16 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-    ports:
-      - "${SONARR_PORT}:8989"
+    labels:
+      dashboard.name: "Sonarr"
+      dashboard.description: "Gerenciador de séries"
+      dashboard.url: "https://sonarr.home.arpa"
     volumes:
       - ./config/sonarr:/config
       - ./media:/media
     networks:
       - media_net
+      - edge-proxy
   prowlarr:
     image: lscr.io/linuxserver/prowlarr@sha256:9ef5d8bf832edcacb6082f9262cb36087854e78eb7b1c3e1d4375056055b2d82 # 2.3.0.5236-ls139
     container_name: prowlarr
@@ -86,12 +99,15 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+    labels:
+      dashboard.name: "Prowlarr"
+      dashboard.description: "Gerenciador de indexadores"
+      dashboard.url: "https://prowlarr.home.arpa"
     volumes:
       - ./config/prowlarr:/config
-    ports:
-      - "${PROWLARR_PORT}:9696"
     networks:
       - media_net
+      - edge-proxy
   bazarr:
     # NOTA: post-processing script configurado mas provavelmente não funciona
     # para legendas geradas pelo Whisper. O pipeline automático EN->PT-BR
@@ -108,13 +124,16 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-    ports:
-      - "${BAZARR_PORT}:6767"
+    labels:
+      dashboard.name: "Bazarr"
+      dashboard.description: "Gerenciador de legendas"
+      dashboard.url: "https://bazarr.home.arpa"
     volumes:
       - ./config/bazarr:/config
       - ./media:/media
     networks:
       - media_net
+      - edge-proxy
   jellyfin:
     image: lscr.io/linuxserver/jellyfin@sha256:7351868a3a340049503d25da65fae19c77ce3ea58f607f702cac65b6faeec898 # 10.11.8
     container_name: jellyfin
@@ -127,15 +146,18 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
+    labels:
+      dashboard.name: "Jellyfin"
+      dashboard.description: "Servidor de mídia"
+      dashboard.url: "https://jellyfin.home.arpa"
     ports:
-      - "8096:8096"
-      - "8920:8920"
-      - "7359:7359/udp"
+      - "192.168.0.15:8096:8096"
     volumes:
       - ./config/jellyfin:/config
       - ./media:/media
     networks:
       - media_net
+      - edge-proxy
   jellyseerr:
     image: ghcr.io/seerr-team/seerr@sha256:c4cbd5121236ac2f70a843a0b920b68a27976be57917555f1c45b08a1e6b2aad # v3.2.0
     init: true
@@ -148,12 +170,15 @@ services:
     environment:
       - TZ=${TZ}
       - LOG_LEVEL=info
-    ports:
-      - "${JELLYSEERR_PORT}:5055"
+    labels:
+      dashboard.name: "Jellyseerr"
+      dashboard.description: "Gerenciador de solicitações de mídia"
+      dashboard.url: "https://jellyseerr.home.arpa"
     volumes:
       - ./config/jellyseerr:/app/config
     networks:
       - media_net
+      - edge-proxy
 
   whisper-asr:
     image: onerahmet/openai-whisper-asr-webservice@sha256:03b402335881cdab2e4939b24620809df8d6ceec3bf2712217d41c8761a0f5d4 # v1.9.1
@@ -188,10 +213,13 @@ services:
       - TZ=${TZ}
     volumes:
       - ./config/ollama:/root/.ollama
-    ports:
-      - "${OLLAMA_PORT}:11434"
+    labels:
+      dashboard.name: "Ollama"
+      dashboard.description: "Modelos de linguagem (IA)"
+      dashboard.url: "https://ollama.home.arpa"
     networks:
       - media_net
+      - edge-proxy
     deploy:
       resources:
         limits:
@@ -208,8 +236,10 @@ services:
     user: "${PUID}:${PGID}"
     group_add:
       - "968"  # host docker group GID for /var/run/docker.sock access
-    ports:
-      - "8990:8989"
+    labels:
+      dashboard.name: "Legendas"
+      dashboard.description: "Automação de legendas com IA"
+      dashboard.url: "https://legendas.home.arpa"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:rw
       - ./media:/media:rw
@@ -229,6 +259,7 @@ services:
       - SUBTITLE_AUTO_QUEUE_LIMIT=0
     networks:
       - media_net
+      - edge-proxy
     deploy:
       resources:
         limits:
@@ -238,3 +269,6 @@ services:
 networks:
   media_net:
     driver: bridge
+  edge-proxy:
+    external: true
+    name: edge-proxy
